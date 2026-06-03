@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "consulenza360-isin-dashboard",
+  "name": "consulenza360",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-03",
   "assets": {
@@ -14,6 +14,12 @@
   "vars": {
     "APP_ENV": "production",
     "BORSA_ENDPOINT_BASE": "https://www.borsaitaliana.it/borsa/obbligazioni/eurotlx/ricerca-avanzata/risultati.html"
+  },
+  "secrets": {
+    "required": [
+      "CONSULENZA360_SUPABASE_URL",
+      "CONSULENZA360_SUPABASE_SERVICE_ROLE_KEY"
+    ]
   },
   "triggers": {
     "crons": ["0 * * * 1-5"]

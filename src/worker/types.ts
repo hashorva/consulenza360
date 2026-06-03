@@ -6,8 +6,8 @@ export type RunStatus = "pending" | "processing" | "completed" | "failed" | "blo
 export type Env = {
   ASSETS: Fetcher;
   RUN_QUEUE: Queue<RunMessage>;
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  CONSULENZA360_SUPABASE_URL: string;
+  CONSULENZA360_SUPABASE_SERVICE_ROLE_KEY: string;
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
   BORSA_ENDPOINT_BASE?: string;
@@ -44,4 +44,3 @@ export type BlockedResult = {
 };
 
 export type Supabase = SupabaseClient;
-

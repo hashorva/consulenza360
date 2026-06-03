@@ -36,7 +36,7 @@ export function RunExecutionLog({ runId, active }: { runId: string; active: bool
   const summary = logs?.summary ?? { completed: 0, errored: 0, total: 0, processing: 0, pending: 0 };
 
   return (
-    <section className="rounded-lg border border-stone-800 bg-stone-950 p-4 font-mono text-xs text-stone-300 shadow-sm">
+    <section className="rounded-xl border border-stone-800/90 bg-stone-950 p-4 font-mono text-xs text-stone-300 shadow-[0_12px_34px_rgba(28,25,23,0.16)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 pb-2">
         <div className="flex items-center gap-2 text-stone-400">
           <Icon icon={Notification03Icon} className="text-cyan-400" size={16} />
@@ -93,4 +93,3 @@ export function RunExecutionLog({ runId, active }: { runId: string; active: bool
     </section>
   );
 }
-

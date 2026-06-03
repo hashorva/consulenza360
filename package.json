@@ -13,6 +13,7 @@
     "deploy": "npm run build && wrangler deploy",
     "tail": "wrangler tail",
     "typegen": "wrangler types",
+    "with:purrfect-vars": "tsx scripts/with-purrfect-dev-vars.ts",
     "import:isins": "tsx scripts/import-isins.ts"
   },
   "dependencies": {

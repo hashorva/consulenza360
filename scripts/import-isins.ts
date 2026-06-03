@@ -82,12 +82,16 @@ async function main() {
     return;
   }
 
-  const supabase = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+  const supabase = createClient(
+    requireEnv("CONSULENZA360_SUPABASE_URL"),
+    requireEnv("CONSULENZA360_SUPABASE_SERVICE_ROLE_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     },
-  });
+  );
 
   const { data, error } = await supabase.rpc("import_isins", { rows });
   if (error) {

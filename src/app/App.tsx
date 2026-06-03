@@ -1,8 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { CancelCircleIcon, Home01Icon, SearchIcon, Settings01Icon } from "@hugeicons/core-free-icons";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  CancelCircleIcon,
+  Home01Icon,
+  LaptopIcon,
+  Moon02Icon,
+  SearchIcon,
+  Settings01Icon,
+  Sun01Icon,
+} from "@hugeicons/core-free-icons";
 import {
   Area,
   AreaChart,
+  CartesianGrid,
   Cell,
   Pie,
   PieChart,
@@ -21,6 +30,7 @@ import { StatusBadge } from "./components/StatusBadge";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "./components/ui/chart";
 import { Input } from "./components/ui/input";
 import { Switch } from "./components/ui/switch";
 
@@ -30,12 +40,65 @@ const STATUS_COLORS = {
   error: "#f43f5e",
 };
 
-function MetricCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+const historyChartConfig = {
+  present_count: {
+    label: "Present",
+    color: "#06b6d4",
+  },
+  absent_count: {
+    label: "Absent",
+    color: "#a8a29e",
+  },
+  error_count: {
+    label: "Errors",
+    color: "#f43f5e",
+  },
+} satisfies ChartConfig;
+
+type ThemeMode = "light" | "dark" | "device";
+
+const THEME_STORAGE_KEY = "consulenza360-theme";
+
+function isThemeMode(value: string | null): value is ThemeMode {
+  return value === "light" || value === "dark" || value === "device";
+}
+
+function ThemeModeControl({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
+  const options: { value: ThemeMode; label: string; icon: typeof Sun01Icon }[] = [
+    { value: "light", label: "Light", icon: Sun01Icon },
+    { value: "dark", label: "Dark", icon: Moon02Icon },
+    { value: "device", label: "Device", icon: LaptopIcon },
+  ];
+
+  return (
+    <div className="grid w-full grid-cols-3 rounded-xl border border-stone-200/70 bg-stone-100/70 p-1 shadow-inner dark:border-stone-800/70 dark:bg-stone-900/65">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={cn(
+            "flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 transition-all hover:text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-stone-400 dark:hover:text-stone-50",
+            value === option.value &&
+              "bg-white text-stone-950 shadow-sm hover:text-stone-950 dark:bg-stone-50 dark:text-stone-950 dark:hover:text-stone-950",
+          )}
+          aria-pressed={value === option.value}
+          aria-label={`${option.label} theme`}
+          title={`${option.label} theme`}
+          onClick={() => onChange(option.value)}
+        >
+          <Icon icon={option.icon} size={15} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MetricCard({ label, value, detail }: { label: string; value: ReactNode; detail: ReactNode }) {
   return (
     <Card>
       <CardHeader className="p-4 pb-2">
         <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl">{value}</CardTitle>
+        <CardTitle className="font-mono text-2xl">{value}</CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 pt-0 text-xs text-stone-500 dark:text-stone-400">{detail}</CardContent>
     </Card>
@@ -45,6 +108,25 @@ function MetricCard({ label, value, detail }: { label: string; value: string | n
 function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
   const history = summary?.history ?? [];
   const latest = summary?.latest_run;
+  const historySource =
+    history.length > 0
+      ? history
+      : latest
+        ? [
+            {
+              scheduled_date: latest.scheduled_date,
+              present_count: latest.present_count,
+              absent_count: latest.absent_count,
+              error_count: latest.error_count,
+            },
+          ]
+        : [];
+  const historyData = historySource.map((row) => ({
+    scheduled_date: row.scheduled_date,
+    present_count: Number(row.present_count ?? 0),
+    absent_count: Number(row.absent_count ?? 0),
+    error_count: Number(row.error_count ?? 0),
+  }));
   const pieData = latest
     ? [
         { name: "Present", value: latest.present_count, key: "present" },
@@ -52,6 +134,7 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
         { name: "Errors", value: latest.error_count, key: "error" },
       ]
     : [];
+  const hasPieData = pieData.some((entry) => entry.value > 0);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -61,29 +144,71 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
           <CardDescription>Daily EuroTLX snapshots by result state</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={history} margin={{ left: 0, right: 6, top: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="presentFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="scheduled_date" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} width={34} />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: 8,
-                    borderColor: "#e7e5e4",
-                    background: "#fff",
-                  }}
-                />
-                <Area type="monotone" dataKey="present_count" stroke="#06b6d4" fill="url(#presentFill)" strokeWidth={2} />
-                <Area type="monotone" dataKey="absent_count" stroke="#a8a29e" fill="transparent" strokeWidth={1.5} />
-                <Area type="monotone" dataKey="error_count" stroke="#f43f5e" fill="transparent" strokeWidth={1.5} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="min-w-0">
+            {historyData.length > 0 ? (
+              <ChartContainer config={historyChartConfig} className="h-72 w-full">
+                <AreaChart accessibilityLayer data={historyData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="fillPresent" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-present_count)" stopOpacity={0.85} />
+                      <stop offset="95%" stopColor="var(--color-present_count)" stopOpacity={0.08} />
+                    </linearGradient>
+                    <linearGradient id="fillAbsent" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-absent_count)" stopOpacity={0.55} />
+                      <stop offset="95%" stopColor="var(--color-absent_count)" stopOpacity={0.05} />
+                    </linearGradient>
+                    <linearGradient id="fillError" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-error_count)" stopOpacity={0.55} />
+                      <stop offset="95%" stopColor="var(--color-error_count)" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="scheduled_date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    tickFormatter={(value: string) =>
+                      new Intl.DateTimeFormat("en-GB", { month: "short", day: "numeric" }).format(new Date(value))
+                    }
+                  />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} width={36} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent config={historyChartConfig} />}
+                  />
+                  <Area
+                    dataKey="present_count"
+                    type="natural"
+                    fill="url(#fillPresent)"
+                    fillOpacity={0.45}
+                    stroke="var(--color-present_count)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    dataKey="absent_count"
+                    type="natural"
+                    fill="url(#fillAbsent)"
+                    fillOpacity={0.35}
+                    stroke="var(--color-absent_count)"
+                    strokeWidth={1.5}
+                  />
+                  <Area
+                    dataKey="error_count"
+                    type="natural"
+                    fill="url(#fillError)"
+                    fillOpacity={0.35}
+                    stroke="var(--color-error_count)"
+                    strokeWidth={1.5}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-[#fbfaf7] text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400">
+                No historical runs yet
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -94,22 +219,28 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
           <CardDescription>Most recent run status mix</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={pieData} innerRadius={64} outerRadius={88} paddingAngle={3} dataKey="value">
-                  {pieData.map((entry) => (
-                    <Cell key={entry.key} fill={STATUS_COLORS[entry.key as keyof typeof STATUS_COLORS]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="h-56 min-w-0">
+            {hasPieData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} innerRadius={64} outerRadius={88} paddingAngle={3} dataKey="value">
+                    {pieData.map((entry) => (
+                      <Cell key={entry.key} fill={STATUS_COLORS[entry.key as keyof typeof STATUS_COLORS]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-[#fbfaf7] text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400">
+                No latest split yet
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-md bg-cyan-50 p-2 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300">Present</div>
-            <div className="rounded-md bg-stone-100 p-2 text-stone-600 dark:bg-stone-900 dark:text-stone-300">Absent</div>
-            <div className="rounded-md bg-rose-50 p-2 text-rose-700 dark:bg-rose-950 dark:text-rose-300">Error</div>
+            <div className="rounded-lg border border-cyan-100 bg-cyan-50/80 p-2 text-cyan-700 dark:border-cyan-900/70 dark:bg-cyan-950/50 dark:text-cyan-300">Present</div>
+            <div className="rounded-lg border border-stone-200/70 bg-white/80 p-2 text-stone-600 dark:border-stone-800/80 dark:bg-stone-900/70 dark:text-stone-300">Absent</div>
+            <div className="rounded-lg border border-rose-100 bg-rose-50/80 p-2 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/50 dark:text-rose-300">Error</div>
           </div>
         </CardContent>
       </Card>
@@ -148,6 +279,7 @@ function IsinList({
   });
 
   const rows = table.getRowModel().rows.map((row) => row.original);
+  const activeCount = data?.total ?? 0;
 
   return (
     <Card>
@@ -155,7 +287,9 @@ function IsinList({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle>ISIN Universe</CardTitle>
-            <CardDescription>{data?.total ?? 0} active instruments</CardDescription>
+            <CardDescription>
+              <span className="font-mono">{activeCount}</span> active instruments
+            </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant={status === "all" ? "default" : "secondary"} size="sm" onClick={() => onStatus("all")}>
@@ -178,7 +312,7 @@ function IsinList({
             <Input className="pl-9" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search ISIN or bond name..." />
           </div>
           <select
-            className="h-9 rounded-md border border-stone-200 bg-white px-3 text-sm dark:border-stone-800 dark:bg-stone-950"
+            className="h-9 rounded-xl border border-stone-200/70 bg-white px-3 text-sm shadow-sm transition-all focus-visible:border-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/20 dark:border-stone-800/70 dark:bg-stone-900/70 dark:focus-visible:border-cyan-400"
             value={`${sorting[0]?.id ?? "isin"}:${sorting[0]?.desc ? "desc" : "asc"}`}
             onChange={(event) => {
               const [id, dir] = event.target.value.split(":");
@@ -197,9 +331,9 @@ function IsinList({
         {rows.map((row) => (
           <article
             key={row.isin}
-            className="flex min-h-12 w-full items-center gap-3 rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 dark:border-stone-900 dark:bg-stone-900/60"
+            className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-stone-200/70 bg-[#fbfaf7] px-3 py-2 shadow-sm transition-colors hover:border-stone-300/80 hover:bg-white dark:border-stone-800/70 dark:bg-stone-950/45 dark:hover:border-stone-700 dark:hover:bg-stone-900/80"
           >
-            <div className="flex h-9 w-28 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white font-mono text-xs font-semibold dark:border-stone-800 dark:bg-stone-950">
+            <div className="flex h-9 w-28 shrink-0 items-center justify-center rounded-xl border border-stone-200/70 bg-white font-mono text-xs font-semibold shadow-sm dark:border-stone-800/70 dark:bg-stone-900">
               {row.isin}
             </div>
             <div className="min-w-0 flex-1">
@@ -207,7 +341,7 @@ function IsinList({
               <div className="truncate text-xs text-stone-500 dark:text-stone-400">Checked {formatDateTime(row.checked_at)}</div>
             </div>
             <StatusBadge status={row.status ?? "unchecked"} />
-            <div className="hidden w-20 text-right text-xs text-stone-500 md:block">{row.response_time ? `${row.response_time}ms` : ""}</div>
+            <div className="hidden w-20 text-right font-mono text-xs text-stone-500 md:block">{row.response_time ? `${row.response_time}ms` : ""}</div>
             {row.source_url ? (
               <Button asChild variant="secondary" size="sm">
                 <a href={row.source_url} target="_blank" rel="noreferrer">
@@ -221,7 +355,7 @@ function IsinList({
           </article>
         ))}
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-stone-200 p-8 text-center text-sm text-stone-500 dark:border-stone-800">
+          <div className="rounded-2xl border border-dashed border-stone-200/80 bg-[#fbfaf7] p-8 text-center text-sm text-stone-500 dark:border-stone-800/80 dark:bg-stone-900/30">
             No ISINs match the current filters.
           </div>
         ) : null}
@@ -252,7 +386,7 @@ function SettingsPanel({
         <CardDescription>Automation runs on whole-hour Europe/Rome weekdays.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+        <label className="flex items-center justify-between gap-4 rounded-xl border border-stone-200/80 bg-stone-50/60 p-3 shadow-sm dark:border-stone-800/80 dark:bg-stone-900/40">
           <span>
             <span className="block text-sm font-medium">Automation</span>
             <span className="text-xs text-stone-500">Queue-driven daily scan</span>
@@ -266,7 +400,7 @@ function SettingsPanel({
             <Button onClick={() => onSave({ run_hour: runHour })}>Save</Button>
           </div>
         </label>
-        <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+        <label className="flex items-center justify-between gap-4 rounded-xl border border-stone-200/80 bg-stone-50/60 p-3 shadow-sm dark:border-stone-800/80 dark:bg-stone-900/40">
           <span>
             <span className="block text-sm font-medium">Weekdays only</span>
             <span className="text-xs text-stone-500">Monday to Friday</span>
@@ -283,20 +417,32 @@ function SettingsPanel({
 
 export function App() {
   const [view, setView] = useState<"dashboard" | "settings">("dashboard");
-  const [dark, setDark] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return isThemeMode(stored) ? stored : "device";
+  });
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isins, setIsins] = useState<IsinListResponse | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [sorting, setSorting] = useState<SortingState>([{ id: "isin", desc: false }]);
-  const [addIsin, setAddIsin] = useState("");
-  const [addName, setAddName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-  }, [dark]);
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const useDark = themeMode === "dark" || (themeMode === "device" && mediaQuery.matches);
+      document.documentElement.classList.toggle("dark", useDark);
+      document.documentElement.style.colorScheme = useDark ? "dark" : "light";
+    };
+
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    applyTheme();
+    mediaQuery.addEventListener("change", applyTheme);
+
+    return () => mediaQuery.removeEventListener("change", applyTheme);
+  }, [themeMode]);
 
   const latestRun = summary?.latest_run;
   const runActive = latestRun?.status === "processing";
@@ -343,22 +489,22 @@ export function App() {
     return () => window.clearInterval(interval);
   }, [runActive]);
 
-  const addInstrument = async () => {
-    await api.addIsin({ isin: addIsin, bond_name: addName });
-    setAddIsin("");
-    setAddName("");
-    await loadIsins();
-  };
-
   const statusDetail = useMemo(() => {
     if (!latestRun) return "No runs yet";
     if (latestRun.status === "blocked") return latestRun.blocked_reason ?? "Blocked";
-    return `${latestRun.processed_isins}/${latestRun.total_isins} processed`;
+    return (
+      <>
+        <span className="font-mono">
+          {latestRun.processed_isins}/{latestRun.total_isins}
+        </span>{" "}
+        processed
+      </>
+    );
   }, [latestRun]);
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-950 dark:bg-stone-950 dark:text-stone-50">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white px-4 py-5 dark:border-stone-800 dark:bg-stone-950 lg:block">
+    <div className="min-h-screen bg-[#f4f1ec] text-stone-950 dark:bg-[#11100e] dark:text-stone-50">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200/70 bg-[#fbfaf7] px-4 py-5 shadow-[12px_0_48px_rgba(28,25,23,0.08)] dark:border-stone-800/70 dark:bg-[#171513] dark:shadow-[12px_0_48px_rgba(0,0,0,0.18)] lg:block">
         <div className="mb-8">
           <div className="font-semibold">Consulenza360</div>
           <div className="text-sm text-stone-500">EuroTLX ISIN checks</div>
@@ -368,6 +514,9 @@ export function App() {
             <Icon icon={Home01Icon} size={17} />
             Dashboard
           </Button>
+          <div className="py-2">
+            <ThemeModeControl value={themeMode} onChange={setThemeMode} />
+          </div>
           <Button className="w-full justify-start" variant={view === "settings" ? "default" : "ghost"} onClick={() => setView("settings")}>
             <Icon icon={Settings01Icon} size={17} />
             Settings
@@ -376,7 +525,7 @@ export function App() {
       </aside>
 
       <main className="lg:pl-64">
-        <header className="sticky top-0 z-10 border-b border-stone-200 bg-stone-50/90 px-4 py-3 backdrop-blur dark:border-stone-800 dark:bg-stone-950/90 sm:px-6">
+        <header className="sticky top-0 z-10 border-b border-stone-200/70 bg-[#f4f1ec]/90 px-4 py-3 backdrop-blur-xl dark:border-stone-800/70 dark:bg-[#11100e]/90 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-semibold tracking-normal">EuroTLX ISIN Dashboard</h1>
@@ -384,16 +533,13 @@ export function App() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={runActive ? "cyan" : "absent"}>{latestRun?.status ?? "idle"}</Badge>
-              <Button variant="secondary" onClick={() => setDark((value) => !value)}>
-                {dark ? "Light" : "Dark"}
-              </Button>
             </div>
           </div>
         </header>
 
         <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
           {error ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300">
+            <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-3 text-sm text-rose-700 shadow-sm dark:border-rose-900/80 dark:bg-rose-950/50 dark:text-rose-300">
               {error}
             </div>
           ) : null}
@@ -409,20 +555,6 @@ export function App() {
 
               {runActive && latestRun?.id ? <RunExecutionLog runId={latestRun.id} active={runActive} /> : null}
               <DashboardCharts summary={summary} />
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Add ISIN</CardTitle>
-                  <CardDescription>Additions are stored in Supabase and checked in the next run.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-2 md:grid-cols-[12rem_minmax(0,1fr)_auto]">
-                    <Input value={addIsin} onChange={(event) => setAddIsin(event.target.value.toUpperCase())} placeholder="XS0000000000" />
-                    <Input value={addName} onChange={(event) => setAddName(event.target.value)} placeholder="Bond name" />
-                    <Button onClick={addInstrument}>Add</Button>
-                  </div>
-                </CardContent>
-              </Card>
 
               <IsinList
                 data={isins}
