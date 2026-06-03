@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "consulenza360-isin-dashboard",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-03",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "BORSA_ENDPOINT_BASE": "https://www.borsaitaliana.it/borsa/obbligazioni/eurotlx/ricerca-avanzata/risultati.html"
+  },
+  "triggers": {
+    "crons": ["0 * * * 1-5"]
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "RUN_QUEUE",
+        "queue": "eurotlx-run-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "eurotlx-run-queue",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "eurotlx-run-dlq"
+      }
+    ]
+  }
+}
