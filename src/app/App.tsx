@@ -22,6 +22,7 @@ import {
   Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import readXlsxFile from "read-excel-file/browser";
+import { Toaster, toast as sonnerToast } from "sonner";
 import {
   Area,
   AreaChart,
@@ -35,7 +36,7 @@ import {
 import { getCoreRowModel, type SortingState, useReactTable } from "@tanstack/react-table";
 import { api } from "./lib/api";
 import { cn, formatDateTime, formatTime } from "./lib/utils";
-import type { AppEventListResponse, DashboardSummary, Identity, IsinListResponse, IsinRow, RunLogs, Settings, UserSettings } from "./types/api";
+import type { AppEventListResponse, DashboardSummary, Identity, IsinListResponse, IsinRow, ManualRunDecision, RunLogs, Settings, UserSettings } from "./types/api";
 import { Icon } from "./components/Icon";
 import { RunExecutionLog } from "./components/RunExecutionLog";
 import { StatusBadge } from "./components/StatusBadge";
@@ -118,6 +119,52 @@ function currentRoute(): AppRoute {
   if (window.location.pathname === "/isin") return "/isin";
   if (window.location.pathname === "/logs") return "/logs";
   return "/";
+}
+
+function formatDuration(seconds: number) {
+  const safeSeconds = Math.max(0, Math.ceil(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+  return `${remainingSeconds}s`;
+}
+
+function manualRunReasonLabel(reason: ManualRunDecision["reason"]) {
+  if (reason === "active_run") return "A scan is already running.";
+  if (reason === "daily_limit") return "Daily manual run limit reached.";
+  if (reason === "cooldown") return "Manual checks are cooling down.";
+  return "Manual check is not available right now.";
+}
+
+function ManualRunDeniedToast({ decision }: { decision: ManualRunDecision }) {
+  const [now, setNow] = useState(() => Date.now());
+  const nextAllowedTime = decision.next_allowed_at ? new Date(decision.next_allowed_at).getTime() : null;
+  const secondsLeft = nextAllowedTime ? Math.max(0, Math.ceil((nextAllowedTime - now) / 1000)) : decision.seconds_until_next;
+
+  useEffect(() => {
+    if (!nextAllowedTime) return undefined;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [nextAllowedTime]);
+
+  return (
+    <div className="space-y-1">
+      <div className="font-medium">{manualRunReasonLabel(decision.reason)}</div>
+      {decision.reason === "active_run" ? (
+        <div className="text-xs text-stone-500">Wait for the current queue run to finish before starting another one.</div>
+      ) : (
+        <div className="text-xs text-stone-500">
+          Try again in <span className="font-mono font-semibold text-stone-800 dark:text-stone-100">{formatDuration(secondsLeft)}</span>.
+        </div>
+      )}
+      <div className="text-xs text-stone-500">
+        Manual runs left today: {decision.remaining_today}/{decision.manual_refresh_limit}
+      </div>
+    </div>
+  );
 }
 
 function ThemeModeControl({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
@@ -320,7 +367,7 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
         </CardContent>
       </Card>
 
-      <Card className="flex flex-col">
+      <Card className="hidden lg:flex flex-col">
         <CardHeader className="pb-0">
           <CardTitle>Latest Split</CardTitle>
           <CardDescription>Most recent run status mix</CardDescription>
@@ -805,9 +852,15 @@ function SettingsDialog({
   ];
   const [runHour, setRunHour] = useState(settings?.run_hour ?? 10);
   const [refreshSeconds, setRefreshSeconds] = useState(userSettings?.dashboard_refresh_seconds ?? 15);
+  const [cooldownMinutes, setCooldownMinutes] = useState(settings?.manual_refresh_cooldown_minutes ?? 30);
+  const [dailyLimit, setDailyLimit] = useState(settings?.manual_refresh_daily_limit ?? 8);
 
   useEffect(() => {
-    if (settings) setRunHour(settings.run_hour);
+    if (settings) {
+      setRunHour(settings.run_hour);
+      setCooldownMinutes(settings.manual_refresh_cooldown_minutes);
+      setDailyLimit(settings.manual_refresh_daily_limit);
+    }
   }, [settings]);
   useEffect(() => {
     if (userSettings) setRefreshSeconds(userSettings.dashboard_refresh_seconds);
@@ -890,6 +943,25 @@ function SettingsDialog({
                   <span className="text-sm font-medium">Weekdays only</span>
                   <Switch checked={settings?.weekday_only ?? true} onCheckedChange={(weekday_only) => void onSaveSettings({ weekday_only })} />
                 </label>
+                <div className="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-3 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-200">
+                  Manual runs contact Borsa Italiana immediately. Keep these limits conservative to avoid repeated fetch bursts and blocked traffic.
+                </div>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Manual cooldown</span>
+                  <div className="flex gap-2">
+                    <Input type="number" min={15} max={240} value={cooldownMinutes} onChange={(event) => setCooldownMinutes(Number(event.target.value))} />
+                    <Button onClick={() => onSaveSettings({ manual_refresh_cooldown_minutes: cooldownMinutes })}>Save</Button>
+                  </div>
+                  <span className="text-xs text-stone-500">Allowed range: 15-240 minutes. Current default is 30 minutes.</span>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Daily manual limit</span>
+                  <div className="flex gap-2">
+                    <Input type="number" min={1} max={8} value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value))} />
+                    <Button onClick={() => onSaveSettings({ manual_refresh_daily_limit: dailyLimit })}>Save</Button>
+                  </div>
+                  <span className="text-xs text-stone-500">Allowed range: 1-8 manual runs per Europe/Rome day.</span>
+                </label>
                 <Button className="w-full" onClick={onManualRun}>Start manual run</Button>
               </section>
             ) : null}
@@ -966,6 +1038,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; level: "success" | "error" | "info" } | null>(null);
+  const [manualRunPending, setManualRunPending] = useState(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1160,6 +1233,35 @@ export function App() {
     await loadEvents();
   }, [loadEvents, notify]);
 
+  const startManualRun = useCallback(async () => {
+    if (manualRunPending) return;
+    setManualRunPending(true);
+
+    try {
+      const decision = await api.startRun();
+
+      if (!decision.allowed) {
+        sonnerToast.warning(<ManualRunDeniedToast decision={decision} />, {
+          duration: decision.reason === "active_run" ? 5000 : Math.min(Math.max(decision.seconds_until_next * 1000, 5000), 30000),
+        });
+        await loadDashboard();
+        return;
+      }
+
+      sonnerToast.success("Manual run started", {
+        description: `${decision.total_isins} ISINs queued. ${decision.remaining_today}/${decision.manual_refresh_limit} manual runs left today.`,
+      });
+      await loadDashboard();
+      await loadEvents();
+    } catch (runError) {
+      const message = runError instanceof Error ? runError.message : "Unable to start manual run.";
+      sonnerToast.error(message);
+      setError(message);
+    } finally {
+      setManualRunPending(false);
+    }
+  }, [loadDashboard, loadEvents, manualRunPending]);
+
   const statusDetail = useMemo(() => {
     if (!latestRun) return "No runs yet";
     if (latestRun.status === "blocked") return latestRun.blocked_reason ?? "Blocked";
@@ -1352,17 +1454,12 @@ export function App() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={runActive}
-                  onClick={async () => {
-                    await api.startRun();
-                    notify("Manual run started");
-                    await loadDashboard();
-                    await loadEvents();
-                  }}
+                  disabled={manualRunPending}
+                  onClick={startManualRun}
                   className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
                 >
-                  <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn(runActive && "animate-spin text-system")} />
-                  <span>{runActive ? "Scanning..." : "Run Check"}</span>
+                  <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn((runActive || manualRunPending) && "animate-spin text-system")} />
+                  <span>{runActive ? "Scanning..." : manualRunPending ? "Starting..." : "Run Check"}</span>
                 </Button>
               </div>
             </div>
@@ -1477,12 +1574,7 @@ export function App() {
         onTab={setSettingsTab}
         onSaveSettings={saveSettings}
         onSaveUserSettings={saveUserSettings}
-        onManualRun={async () => {
-          await api.startRun();
-          notify("Manual run started");
-          await loadDashboard();
-          await loadEvents();
-        }}
+        onManualRun={startManualRun}
         onChangeThemeMode={updateThemeMode}
       />
       <AddEditIsinDialog open={editOpen} row={editingIsin} onOpenChange={setEditOpen} onSave={saveIsin} />
@@ -1492,6 +1584,7 @@ export function App() {
           {toast.message}
         </div>
       ) : null}
+      <Toaster richColors position="top-right" theme={document.documentElement.classList.contains("dark") ? "dark" : "light"} />
     </div>
   );
 }

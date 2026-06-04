@@ -19,6 +19,8 @@ type SettingsBody = {
   enabled?: boolean;
   run_hour?: number;
   weekday_only?: boolean;
+  manual_refresh_cooldown_minutes?: number;
+  manual_refresh_daily_limit?: number;
 };
 
 type UserSettingsBody = {
@@ -275,6 +277,22 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     if (typeof body.run_hour === "number" && Number.isInteger(body.run_hour) && body.run_hour >= 0 && body.run_hour <= 23) {
       patch.run_hour = body.run_hour;
     }
+    if (
+      typeof body.manual_refresh_cooldown_minutes === "number"
+      && Number.isInteger(body.manual_refresh_cooldown_minutes)
+      && body.manual_refresh_cooldown_minutes >= 15
+      && body.manual_refresh_cooldown_minutes <= 240
+    ) {
+      patch.manual_refresh_cooldown_minutes = body.manual_refresh_cooldown_minutes;
+    }
+    if (
+      typeof body.manual_refresh_daily_limit === "number"
+      && Number.isInteger(body.manual_refresh_daily_limit)
+      && body.manual_refresh_daily_limit >= 1
+      && body.manual_refresh_daily_limit <= 8
+    ) {
+      patch.manual_refresh_daily_limit = body.manual_refresh_daily_limit;
+    }
 
     const { data, error } = await supabase.from("settings").update(patch).eq("id", true).select().single();
     if (error) throw error;
@@ -352,6 +370,22 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/runs" && request.method === "POST") {
     const run = await startManualRun(env);
+    if (!run.allowed) {
+      return jsonResponse(run, { status: 429 });
+    }
+
+    await recordEvent(supabase, identity, {
+      source: "user",
+      level: "success",
+      message: "Manual run started",
+      entity_type: "check_run",
+      entity_id: run.run_id ?? undefined,
+      metadata: {
+        total_isins: run.total_isins,
+        remaining_today: run.remaining_today,
+        next_allowed_at: run.next_allowed_at,
+      },
+    });
     return jsonResponse(run, { status: 202 });
   }
 

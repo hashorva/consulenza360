@@ -1,7 +1,7 @@
 import { checkEurotlxIsin } from "./eurotlx";
 import { mapWithConcurrency } from "./pool";
 import { createSupabase } from "./supabase";
-import type { BlockedResult, CheckResult, ClaimedIsin, Env, RunMessage } from "./types";
+import type { BlockedResult, CheckResult, ClaimedIsin, Env, ManualRunDecision, RunMessage } from "./types";
 
 const BATCH_SIZE = 45;
 const FETCH_CONCURRENCY = 4;
@@ -111,17 +111,22 @@ export async function runScheduled(env: Env) {
 
 export async function startManualRun(env: Env) {
   const supabase = createSupabase(env);
-  const { data, error } = await supabase.rpc("start_manual_run", {
+  const { data, error } = await supabase.rpc("start_guarded_manual_run", {
     now_utc: new Date().toISOString(),
   });
 
   if (error) throw error;
-  const row = unwrapRpcRow<{ run_id: string; total_isins: number }>(data);
-  if (!row?.run_id) {
-    throw new Error("Manual run RPC did not return a run id.");
+  const row = unwrapRpcRow<ManualRunDecision>(data);
+  if (!row) {
+    throw new Error("Manual run RPC did not return a decision.");
   }
 
-  await enqueueRun(env, row.run_id, 1);
+  if (row.allowed) {
+    if (!row.run_id) {
+      throw new Error("Manual run RPC allowed the request without returning a run id.");
+    }
+    await enqueueRun(env, row.run_id, 1);
+  }
+
   return row;
 }
-

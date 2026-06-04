@@ -1,4 +1,4 @@
-import type { AppEventListResponse, DashboardSummary, Identity, IsinListResponse, RunLogs, Settings, UserSettings } from "../types/api";
+import type { AppEventListResponse, DashboardSummary, Identity, IsinListResponse, ManualRunDecision, RunLogs, Settings, UserSettings } from "../types/api";
 
 async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -64,10 +64,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  startRun: () =>
-    request<{ run_id: string; total_isins: number }>("/api/runs", {
+  startRun: async () => {
+    const response = await fetch("/api/runs", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
-    }),
+    });
+    const body = (await response.json().catch(() => null)) as ManualRunDecision | { error?: string } | null;
+
+    if (response.status === 429 && body && "allowed" in body) {
+      return body;
+    }
+    if (!response.ok) {
+      throw new Error(body && "error" in body && body.error ? body.error : `Request failed with ${response.status}`);
+    }
+    if (!body || !("allowed" in body)) {
+      throw new Error("Manual run response was invalid.");
+    }
+    return body;
+  },
   runLogs: (runId: string) => request<RunLogs>(`/api/runs/${runId}/logs`),
 };

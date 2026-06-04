@@ -19,6 +19,18 @@ export type RunMessage = {
   iteration: number;
 };
 
+export type ManualRunDecision = {
+  allowed: boolean;
+  reason: "active_run" | "cooldown" | "daily_limit" | string | null;
+  run_id: string | null;
+  total_isins: number;
+  remaining_today: number;
+  next_allowed_at: string | null;
+  seconds_until_next: number;
+  manual_refresh_limit: number;
+  manual_refresh_cooldown_minutes: number;
+};
+
 export type ClaimedIsin = {
   isin: string;
   bond_name: string;
