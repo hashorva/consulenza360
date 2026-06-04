@@ -1499,7 +1499,7 @@ export function App() {
 
             <div className="flex flex-wrap items-center gap-5 text-right ml-auto">
               {/* Sync Status (page automatic refresh status) */}
-              <div className="flex flex-col items-end gap-0.5">
+              <div className="hidden sm:flex flex-col items-end gap-0.5">
                 <span className="text-[10px] uppercase tracking-wider text-stone-455 dark:text-stone-500 font-semibold">Sync Status</span>
                 <div className="flex items-center gap-1.5">
                   {runActive ? (
