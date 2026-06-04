@@ -38,19 +38,15 @@ export function DialogContent({ className, children, ...props }: React.HTMLAttri
   if (!context?.open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-40 grid place-items-center p-3">
-      <div
-        className="absolute inset-0 bg-stone-950/28 backdrop-blur-sm"
-        onMouseDown={() => context.onOpenChange(false)}
-      />
+    <div className="fixed inset-0 z-40 grid place-items-center bg-stone-950/30 p-3 backdrop-blur-sm" onClick={() => context.onOpenChange(false)}>
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
-          "relative z-10 max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-hidden rounded-3xl border border-stone-200/80 bg-[#fbfaf7] text-stone-950 shadow-2xl outline-none dark:border-stone-800/80 dark:bg-[#171513] dark:text-stone-50",
+          "relative z-10 max-h-screen w-full max-w-3xl overflow-hidden rounded-3xl border border-stone-200/80 bg-stone-50 text-stone-950 shadow-2xl outline-none dark:border-stone-800/80 dark:bg-stone-950 dark:text-stone-50",
           className,
         )}
-        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         {...props}
       >
         {children}

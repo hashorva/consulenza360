@@ -82,6 +82,7 @@ npx shadcn@latest add <component>
 - Do not use `shadcn apply --only theme` when the task is to adopt the full Luma style, because Luma changes component geometry and spacing in addition to theme tokens.
 - Luma changes component geometry and spacing, not only colors. When adapting existing components manually, update radius, surface treatment, shadows, gaps, and control sizing to match Luma instead of only changing theme tokens.
 - Preserve this dashboard's operational density: Luma should make the UI softer and more refined, but compact ISIN rows, scan-friendly tables, and the required 44-52px row height still take priority.
+- Avoid arbitrary Tailwind values such as `mb-[60px]` when a close scale utility exists. If the user gives a pixel value, choose the nearest Tailwind spacing/sizing token, for example `mb-14` or `mb-16` instead of a bracketed custom value.
 
 ## Cloudflare Worker rules
 

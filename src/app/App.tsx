@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   Add01Icon,
   ArchiveRestoreIcon,
+  ArrowReloadHorizontalIcon,
+  BadgeAlertIcon,
+  BadgeCheckIcon,
   DashboardBrowsingIcon,
   Delete02Icon,
   Download01Icon,
@@ -23,11 +26,9 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Cell,
+  Label,
   Pie,
   PieChart,
-  ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -40,30 +41,45 @@ import { RunExecutionLog } from "./components/RunExecutionLog";
 import { StatusBadge } from "./components/StatusBadge";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "./components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "./components/ui/chart";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { Input } from "./components/ui/input";
 import { Switch } from "./components/ui/switch";
 
 const STATUS_COLORS = {
-  present: "#06b6d4",
-  absent: "#a8a29e",
-  error: "#f43f5e",
+  present: "var(--present)",
+  absent: "var(--absent)",
+  error: "var(--error)",
 };
 
 const historyChartConfig = {
   present_count: {
     label: "Present",
-    color: "#06b6d4",
+    color: "var(--present)",
   },
   absent_count: {
     label: "Absent",
-    color: "#a8a29e",
+    color: "var(--absent)",
   },
   error_count: {
     label: "Errors",
-    color: "#f43f5e",
+    color: "var(--error)",
+  },
+} satisfies ChartConfig;
+
+const splitChartConfig = {
+  present: {
+    label: "Present",
+    color: "var(--present)",
+  },
+  absent: {
+    label: "Absent",
+    color: "var(--absent)",
+  },
+  error: {
+    label: "Errors",
+    color: "var(--error)",
   },
 } satisfies ChartConfig;
 
@@ -91,6 +107,13 @@ function setCookie(name: string, value: string) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
+function applyThemeMode(mode: ThemeMode) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const useDark = mode === "dark" || (mode === "device" && mediaQuery.matches);
+  document.documentElement.classList.toggle("dark", useDark);
+  document.documentElement.style.colorScheme = useDark ? "dark" : "light";
+}
+
 function currentRoute(): AppRoute {
   if (window.location.pathname === "/isin") return "/isin";
   if (window.location.pathname === "/logs") return "/logs";
@@ -98,10 +121,10 @@ function currentRoute(): AppRoute {
 }
 
 function ThemeModeControl({ value, onChange }: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
-  const options: { value: ThemeMode; label: string; icon: typeof Sun01Icon }[] = [
-    { value: "light", label: "Light", icon: Sun01Icon },
-    { value: "dark", label: "Dark", icon: Moon02Icon },
-    { value: "device", label: "Device", icon: LaptopIcon },
+  const options: { value: ThemeMode; label: string; icon: typeof Sun01Icon; colorClass: string }[] = [
+    { value: "light", label: "Light", icon: Sun01Icon, colorClass: "hover:text-amber-500" },
+    { value: "dark", label: "Dark", icon: Moon02Icon, colorClass: "hover:text-indigo-600" },
+    { value: "device", label: "Device", icon: LaptopIcon, colorClass: "hover:text-cyan-500" },
   ];
 
   return (
@@ -111,9 +134,13 @@ function ThemeModeControl({ value, onChange }: { value: ThemeMode; onChange: (va
           key={option.value}
           type="button"
           className={cn(
-            "flex h-8 w-9 items-center justify-center rounded-full text-stone-500 transition-all hover:text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-stone-400 dark:hover:text-stone-50",
+            "flex h-8 w-9 items-center justify-center rounded-full text-stone-500 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-stone-400",
+            option.colorClass,
             value === option.value &&
-              "bg-white text-stone-950 shadow-sm hover:text-stone-950 dark:bg-stone-50 dark:text-stone-950 dark:hover:text-stone-950",
+              "bg-white shadow-sm dark:bg-stone-50",
+            value === "light" && option.value === "light" && "text-amber-500",
+            value === "dark" && option.value === "dark" && "text-indigo-600",
+            value === "device" && option.value === "device" && "text-cyan-500",
           )}
           aria-pressed={value === option.value}
           aria-label={`${option.label} theme`}
@@ -127,14 +154,44 @@ function ThemeModeControl({ value, onChange }: { value: ThemeMode; onChange: (va
   );
 }
 
-function MetricCard({ label, value, detail }: { label: string; value: ReactNode; detail: ReactNode }) {
+function MetricCard({
+  label,
+  value,
+  detail,
+  icon,
+  accentColor = "system"
+}: {
+  label: string;
+  value: ReactNode;
+  detail: ReactNode;
+  icon?: any;
+  accentColor?: "system" | "present" | "absent" | "error";
+}) {
   return (
-    <Card>
-      <CardHeader className="p-4 pb-2">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="font-mono text-2xl">{value}</CardTitle>
+    <Card className="relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl border border-stone-200/60 dark:border-stone-850 min-w-0">
+      <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-5 pb-2 min-w-0">
+        <div className="space-y-1 min-w-0 w-full">
+          <CardDescription className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 truncate w-full">{label}</CardDescription>
+          <CardTitle className={cn(
+            "font-mono text-3xl font-bold tracking-tight w-full truncate",
+            accentColor === "system" && "text-system",
+            accentColor === "present" && "text-present",
+            accentColor === "absent" && "text-absent",
+            accentColor === "error" && "text-error"
+          )}>{value}</CardTitle>
+        </div>
+        {icon && (
+          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl shrink-0",
+            accentColor === "system" && "bg-system/10 text-system",
+            accentColor === "present" && "bg-present/10 text-present",
+            accentColor === "absent" && "bg-absent/10 text-absent",
+            accentColor === "error" && "bg-error/10 text-error",
+          )}>
+            <Icon icon={icon} size={20} />
+          </div>
+        )}
       </CardHeader>
-      <CardContent className="px-4 pb-4 pt-0 text-xs text-stone-500 dark:text-stone-400">{detail}</CardContent>
+      <CardContent className="px-3 sm:px-5 pb-3 sm:pb-5 pt-1 text-xs text-stone-500 dark:text-stone-400 truncate w-full">{detail}</CardContent>
     </Card>
   );
 }
@@ -163,16 +220,46 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
   }));
   const pieData = latest
     ? [
-        { name: "Present", value: latest.present_count, key: "present" },
-        { name: "Absent", value: latest.absent_count, key: "absent" },
-        { name: "Errors", value: latest.error_count, key: "error" },
+        { name: "Present", value: latest.present_count, key: "present", fill: "var(--present)" },
+        { name: "Absent", value: latest.absent_count, key: "absent", fill: "var(--absent)" },
+        { name: "Errors", value: latest.error_count, key: "error", fill: "var(--error)" },
       ]
     : [];
   const hasPieData = pieData.some((entry) => entry.value > 0);
 
+  // SVG-based Donut segment calculations (no Recharts)
+  const presentCount = latest?.present_count ?? 0;
+  const absentCount = latest?.absent_count ?? 0;
+  const errorCount = latest?.error_count ?? 0;
+  const total = latest?.total_isins ?? (presentCount + absentCount + errorCount);
+  const r = 70;
+  const strokeWidth = 14;
+  const circumference = 2 * Math.PI * r;
+
+  const rawSegments = [
+    { key: "present", value: presentCount, color: "var(--present)" },
+    { key: "absent", value: absentCount, color: "var(--absent)" },
+    { key: "error", value: errorCount, color: "var(--error)" },
+  ];
+
+  let accumulatedPercentage = 0;
+  const svgSegments = rawSegments
+    .filter(s => s.value > 0)
+    .map(s => {
+      const percentage = s.value / total;
+      const strokeDashoffset = circumference * (1 - percentage);
+      const angle = -90 + (accumulatedPercentage * 360);
+      accumulatedPercentage += percentage;
+      return {
+        ...s,
+        strokeDashoffset,
+        angle,
+      };
+    });
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <Card>
+    <div className="grid gap-4 xl:grid-cols-3">
+      <Card className="xl:col-span-2 relative overflow-hidden">
         <CardHeader>
           <CardTitle>Historical Presence</CardTitle>
           <CardDescription>Daily EuroTLX snapshots by result state</CardDescription>
@@ -182,21 +269,7 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
             {historyData.length > 0 ? (
               <ChartContainer config={historyChartConfig} className="h-72 w-full">
                 <AreaChart accessibilityLayer data={historyData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="fillPresent" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-present_count)" stopOpacity={0.85} />
-                      <stop offset="95%" stopColor="var(--color-present_count)" stopOpacity={0.08} />
-                    </linearGradient>
-                    <linearGradient id="fillAbsent" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-absent_count)" stopOpacity={0.55} />
-                      <stop offset="95%" stopColor="var(--color-absent_count)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="fillError" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-error_count)" stopOpacity={0.55} />
-                      <stop offset="95%" stopColor="var(--color-error_count)" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} />
+                  <CartesianGrid vertical={false} stroke="var(--color-stone-200)" className="opacity-30 dark:stroke-stone-800" />
                   <XAxis
                     dataKey="scheduled_date"
                     tickLine={false}
@@ -214,32 +287,32 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
                   />
                   <Area
                     dataKey="present_count"
-                    type="natural"
-                    fill="url(#fillPresent)"
-                    fillOpacity={0.45}
-                    stroke="var(--color-present_count)"
+                    type="monotone"
+                    fill="var(--present)"
+                    fillOpacity={0.12}
+                    stroke="var(--present)"
                     strokeWidth={2}
                   />
                   <Area
                     dataKey="absent_count"
-                    type="natural"
-                    fill="url(#fillAbsent)"
-                    fillOpacity={0.35}
-                    stroke="var(--color-absent_count)"
+                    type="monotone"
+                    fill="var(--absent)"
+                    fillOpacity={0.06}
+                    stroke="var(--absent)"
                     strokeWidth={1.5}
                   />
                   <Area
                     dataKey="error_count"
-                    type="natural"
-                    fill="url(#fillError)"
-                    fillOpacity={0.35}
-                    stroke="var(--color-error_count)"
+                    type="monotone"
+                    fill="var(--error)"
+                    fillOpacity={0.06}
+                    stroke="var(--error)"
                     strokeWidth={1.5}
                   />
                 </AreaChart>
               </ChartContainer>
             ) : (
-              <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-[#fbfaf7] text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400">
+              <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-stone-50 text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400">
                 No historical runs yet
               </div>
             )}
@@ -247,36 +320,86 @@ function DashboardCharts({ summary }: { summary: DashboardSummary | null }) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="flex flex-col">
+        <CardHeader className="pb-0">
           <CardTitle>Latest Split</CardTitle>
           <CardDescription>Most recent run status mix</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="h-56 min-w-0">
-            {hasPieData ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieData} innerRadius={64} outerRadius={88} paddingAngle={3} dataKey="value">
-                    {pieData.map((entry) => (
-                      <Cell key={entry.key} fill={STATUS_COLORS[entry.key as keyof typeof STATUS_COLORS]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-[#fbfaf7] text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400">
-                No latest split yet
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-lg border border-cyan-100 bg-cyan-50/80 p-2 text-cyan-700 dark:border-cyan-900/70 dark:bg-cyan-950/50 dark:text-cyan-300">Present</div>
-            <div className="rounded-lg border border-stone-200/70 bg-white/80 p-2 text-stone-600 dark:border-stone-800/80 dark:bg-stone-900/70 dark:text-stone-300">Absent</div>
-            <div className="rounded-lg border border-rose-100 bg-rose-50/80 p-2 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/50 dark:text-rose-300">Error</div>
-          </div>
+        <CardContent className="flex-1 pb-0 flex flex-col justify-center">
+          {hasPieData ? (
+            <ChartContainer
+              config={splitChartConfig}
+              className="mx-auto aspect-square w-full max-h-52"
+
+            >
+              <PieChart>
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent />}
+                />
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={60}
+                  strokeWidth={8}
+                >
+                  <Label
+                    content={({ viewBox }) => {
+                      if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                        return (
+                          <text
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                          >
+                            <tspan
+                              x={viewBox.cx}
+                              y={viewBox.cy}
+                              className="fill-stone-900 dark:fill-stone-50 text-3xl font-bold tracking-tight font-mono"
+                            >
+                              {(latest?.total_isins ?? 0).toLocaleString()}
+                            </tspan>
+                            <tspan
+                              x={viewBox.cx}
+                              y={(viewBox.cy || 0) + 24}
+                              className="fill-stone-500 dark:fill-stone-400 text-xs font-sans"
+                            >
+                              Checked
+                            </tspan>
+                          </text>
+                        )
+                      }
+                    }}
+                  />
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+          ) : (
+            <div className="flex h-48 w-full items-center justify-center rounded-2xl border border-dashed border-stone-200/70 bg-stone-50 text-sm text-stone-500 dark:border-stone-800/70 dark:bg-stone-950/35 dark:text-stone-400 mt-2">
+              No latest split yet
+            </div>
+          )}
         </CardContent>
+        {hasPieData && (
+          <CardFooter className="flex-col gap-2 text-sm">
+            <div className="flex flex-wrap justify-center gap-2 text-xs font-sans">
+              <div className="flex items-center gap-1.5 rounded-full border border-present/20 bg-present/10 px-2.5 py-0.5 text-present font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-present" />
+                <span>Present: <span className="font-mono">{latest?.present_count ?? 0}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full border border-absent/20 bg-absent/10 px-2.5 py-0.5 text-absent font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-absent" />
+                <span>Absent: <span className="font-mono">{latest?.absent_count ?? 0}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full border border-error/20 bg-error/10 px-2.5 py-0.5 text-error font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-error" />
+                <span>Error: <span className="font-mono">{latest?.error_count ?? 0}</span></span>
+              </div>
+            </div>
+          </CardFooter>
+        )}
       </Card>
     </div>
   );
@@ -326,23 +449,42 @@ function IsinList({
   const activeCount = data?.total ?? 0;
 
   return (
-    <Card>
-      <CardHeader className="gap-3">
+    <Card className="border border-stone-200/60 dark:border-stone-850 shadow-md">
+      <CardHeader className="gap-3.5 p-5 pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle>{title}</CardTitle>
-            <CardDescription>{description ?? <><span className="font-mono">{activeCount}</span> active instruments</>}</CardDescription>
+            <CardDescription>{description ?? <><span className="font-mono font-medium text-stone-700 dark:text-stone-300">{activeCount}</span> active instruments</>}</CardDescription>
           </div>
           {!management ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant={status === "all" ? "default" : "secondary"} size="sm" onClick={() => onStatus("all")}>All</Button>
-              <Button variant={status === "present" ? "default" : "secondary"} size="sm" onClick={() => onStatus("present")}>Present</Button>
-              <Button variant={status === "absent" ? "default" : "secondary"} size="sm" onClick={() => onStatus("absent")}>Absent</Button>
-              <Button variant={status === "error" ? "default" : "secondary"} size="sm" onClick={() => onStatus("error")}>Error</Button>
+            <div className="inline-flex h-9 items-center rounded-xl bg-stone-100 p-1 dark:bg-stone-900 border border-stone-200/50 dark:border-stone-800/60 shadow-inner">
+              {[
+                { id: "all", label: "All" },
+                { id: "present", label: "Present" },
+                { id: "absent", label: "Absent" },
+                { id: "error", label: "Error" },
+              ].map((tab) => {
+                const active = status === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => onStatus(tab.id)}
+                    className={cn(
+                      "px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer duration-150 focus-visible:outline-none",
+                      active
+                        ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100"
+                        : "text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
         </div>
-        <div className="flex flex-col gap-2 md:flex-row">
+        <div className="flex flex-col gap-2.5 md:flex-row">
           <div className="relative flex-1">
             <Icon icon={SearchIcon} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
             <Input className="pl-9" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search ISIN or bond name..." />
@@ -363,47 +505,50 @@ function IsinList({
           </select>
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 p-5 pt-0">
         {rows.map((row) => (
           <article
             key={row.isin}
-            className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-stone-200/70 bg-[#fbfaf7] px-3 py-2 shadow-sm transition-colors hover:border-stone-300/80 hover:bg-white dark:border-stone-800/70 dark:bg-stone-950/45 dark:hover:border-stone-700 dark:hover:bg-stone-900/80"
+            className="group flex min-h-12 w-full items-center gap-3 rounded-2xl border border-stone-200/50 bg-stone-50/65 px-3 py-2 shadow-sm transition-all duration-300 hover:border-stone-300 dark:border-stone-900/50 dark:bg-stone-950/20 dark:hover:border-stone-850 hover:bg-white dark:hover:bg-stone-900/40 hover:-translate-y-0.5"
           >
-            <div className="flex h-9 w-28 shrink-0 items-center justify-center rounded-xl border border-stone-200/70 bg-white font-mono text-xs font-semibold shadow-sm dark:border-stone-800/70 dark:bg-stone-900">
+            <div className="flex h-9 w-28 shrink-0 items-center justify-center rounded-xl border border-stone-200/70 bg-white font-mono text-xs font-semibold shadow-inner dark:border-stone-800/80 dark:bg-stone-900 text-stone-700 dark:text-stone-300">
               {row.isin}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{row.bond_name}</div>
-              <div className="truncate text-xs text-stone-500 dark:text-stone-400">Checked {formatDateTime(row.checked_at)}</div>
+              <div className="truncate text-sm font-semibold text-stone-900 dark:text-stone-100">{row.bond_name}</div>
+              <div className="truncate text-xs text-stone-450 dark:text-stone-500">Checked <span className="font-mono">{formatDateTime(row.checked_at)}</span></div>
             </div>
             <StatusBadge status={row.status ?? "unchecked"} />
-            <div className="hidden w-20 text-right font-mono text-xs text-stone-500 md:block">{row.response_time ? `${row.response_time}ms` : ""}</div>
-            {row.source_url ? (
-              <Button asChild variant="secondary" size="sm">
-                <a href={row.source_url} target="_blank" rel="noreferrer">
-                  Source
-                </a>
-              </Button>
-            ) : null}
-            {onEdit ? (
-              <Button variant="ghost" size="icon" onClick={() => onEdit(row)} aria-label={`Edit ${row.isin}`}>
-                <Icon icon={Edit01Icon} size={16} />
-              </Button>
-            ) : null}
-            {onRestore && !row.active ? (
-              <Button variant="ghost" size="icon" onClick={() => onRestore(row.isin)} aria-label={`Restore ${row.isin}`}>
-                <Icon icon={ArchiveRestoreIcon} size={16} />
-              </Button>
-            ) : null}
-            {onDelete && row.active !== false ? (
-              <Button variant="ghost" size="icon" onClick={() => onDelete(row.isin)} aria-label={`Delete ${row.isin}`}>
-                <Icon icon={Delete02Icon} size={16} />
-              </Button>
-            ) : null}
+            <div className="hidden w-16 text-right font-mono text-xs text-stone-500 md:block">{row.response_time ? `${row.response_time}ms` : ""}</div>
+
+            <div className="flex items-center gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">
+              {row.source_url ? (
+                <Button asChild variant="secondary" size="sm" className="h-8 rounded-lg px-2.5">
+                  <a href={row.source_url} target="_blank" rel="noreferrer">
+                    Source
+                  </a>
+                </Button>
+              ) : null}
+              {onEdit ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-cyan-500 dark:hover:text-cyan-400" onClick={() => onEdit(row)} aria-label={`Edit ${row.isin}`}>
+                  <Icon icon={Edit01Icon} size={15} />
+                </Button>
+              ) : null}
+              {onRestore && !row.active ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-cyan-500 dark:hover:text-cyan-400" onClick={() => onRestore(row.isin)} aria-label={`Restore ${row.isin}`}>
+                  <Icon icon={ArchiveRestoreIcon} size={15} />
+                </Button>
+              ) : null}
+              {onDelete && row.active !== false ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-rose-500 dark:hover:text-rose-400" onClick={() => onDelete(row.isin)} aria-label={`Delete ${row.isin}`}>
+                  <Icon icon={Delete02Icon} size={15} />
+                </Button>
+              ) : null}
+            </div>
           </article>
         ))}
         {rows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-stone-200/80 bg-[#fbfaf7] p-8 text-center text-sm text-stone-500 dark:border-stone-800/80 dark:bg-stone-900/30">
+          <div className="rounded-2xl border border-dashed border-stone-200/80 bg-stone-50 p-8 text-center text-sm text-stone-500 dark:border-stone-800/80 dark:bg-stone-900/30">
             No ISINs match the current filters.
           </div>
         ) : null}
@@ -563,7 +708,7 @@ function ImportIsinsDialog({
               <a href={templateHref} download="isin-template.csv"><Icon icon={Download01Icon} size={16} />Template</a>
             </Button>
           </div>
-          <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-[#fbfaf7] text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-950/35">
+          <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-950/35">
             <Icon icon={Upload01Icon} size={22} />
             Upload {mode.toUpperCase()} file
             <input className="sr-only" type="file" accept={mode === "csv" ? ".csv,text/csv" : ".xlsx,.xls"} onChange={(event) => event.target.files?.[0] && void readFile(event.target.files[0])} />
@@ -571,9 +716,9 @@ function ImportIsinsDialog({
           {rows.length ? (
             <div className="max-h-52 overflow-y-auto rounded-2xl border border-stone-200/70 dark:border-stone-800/70">
               {rows.slice(0, 80).map((row, index) => (
-                <div key={`${row.isin}-${index}`} className="grid grid-cols-[10rem_minmax(0,1fr)] gap-3 border-b border-stone-200/60 px-3 py-2 text-sm last:border-0 dark:border-stone-800/60">
+                <div key={`${row.isin}-${index}`} className="grid grid-cols-3 gap-3 border-b border-stone-200/60 px-3 py-2 text-sm last:border-0 dark:border-stone-800/60">
                   <span className="font-mono">{row.isin}</span>
-                  <span className={cn("truncate", (!ISIN_PATTERN.test(row.isin) || !row.bond_name) && "text-rose-600")}>{row.bond_name || "Missing bond name"}</span>
+                  <span className={cn("col-span-2 truncate", (!ISIN_PATTERN.test(row.isin) || !row.bond_name) && "text-rose-600")}>{row.bond_name || "Missing bond name"}</span>
                 </div>
               ))}
             </div>
@@ -613,7 +758,7 @@ function SearchDialog({
             <Input className="pl-9" autoFocus value={query} onChange={(event) => onQuery(event.target.value)} />
           </div>
         </div>
-        <DialogBody className="max-h-[26rem] space-y-2">
+        <DialogBody className="max-h-96 space-y-2">
           {(data?.rows ?? []).map((row) => (
             <div key={row.isin} className="flex items-center gap-3 rounded-2xl border border-stone-200/70 bg-white px-3 py-2 dark:border-stone-800/70 dark:bg-stone-900/60">
               <span className="w-28 font-mono text-xs font-semibold">{row.isin}</span>
@@ -639,6 +784,7 @@ function SettingsDialog({
   onSaveSettings,
   onSaveUserSettings,
   onManualRun,
+  onChangeThemeMode,
 }: {
   open: boolean;
   settings: Settings | null;
@@ -650,6 +796,7 @@ function SettingsDialog({
   onSaveSettings: (settings: Partial<Settings>) => Promise<void>;
   onSaveUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
   onManualRun: () => Promise<void>;
+  onChangeThemeMode: (mode: ThemeMode) => void;
 }) {
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "general", label: "General" },
@@ -672,7 +819,7 @@ function SettingsDialog({
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
-        <div className="grid max-h-[calc(100vh-7rem)] min-h-[32rem] grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[12rem_minmax(0,1fr)] lg:grid-rows-1">
+        <div className="flex max-h-screen min-h-96 flex-col lg:grid lg:grid-cols-4">
           <aside className="overflow-x-auto border-b border-stone-200/70 p-3 dark:border-stone-800/70 lg:border-b-0 lg:border-r">
             <nav className="flex gap-2 lg:flex-col">
               {tabs.map((tab) => (
@@ -689,14 +836,14 @@ function SettingsDialog({
               ))}
             </nav>
           </aside>
-          <DialogBody className="space-y-5">
+          <DialogBody className="space-y-5 lg:col-span-3">
             {activeTab === "general" ? (
               <>
                 <section className="space-y-3">
                   <h3 className="font-semibold">Appearance</h3>
                   <div className="flex items-center justify-between gap-4 border-b border-stone-200/70 py-3 dark:border-stone-800/70">
                     <span className="text-sm">User theme preference</span>
-                    <ThemeModeControl value={userSettings?.theme_preference ?? "device"} onChange={(theme_preference) => void onSaveUserSettings({ theme_preference })} />
+                    <ThemeModeControl value={themeMode} onChange={onChangeThemeMode} />
                   </div>
                   <div className="flex items-center justify-between gap-4 border-b border-stone-200/70 py-3 dark:border-stone-800/70">
                     <span className="text-sm">Sidebar quick theme</span>
@@ -763,7 +910,7 @@ function LogsPage({ events, runLogs }: { events: AppEventListResponse | null; ru
         </CardHeader>
         <CardContent className="space-y-2">
           {(events?.rows ?? []).filter((event) => event.source === "user").map((event) => (
-            <div key={event.id} className="rounded-2xl border border-stone-200/70 bg-[#fbfaf7] p-3 dark:border-stone-800/70 dark:bg-stone-950/35">
+            <div key={event.id} className="rounded-2xl border border-stone-200/70 bg-stone-50 p-3 dark:border-stone-800/70 dark:bg-stone-950/35">
               <div className="text-sm font-medium">{event.message}</div>
               <div className="text-xs text-stone-500">{formatDateTime(event.created_at)}</div>
             </div>
@@ -822,18 +969,15 @@ export function App() {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => {
-      const useDark = themeMode === "dark" || (themeMode === "device" && mediaQuery.matches);
-      document.documentElement.classList.toggle("dark", useDark);
-      document.documentElement.style.colorScheme = useDark ? "dark" : "light";
-    };
+    const applyTheme = () => applyThemeMode(themeMode);
 
-    setCookie(THEME_COOKIE_KEY, themeMode);
     applyTheme();
     mediaQuery.addEventListener("change", applyTheme);
 
     return () => mediaQuery.removeEventListener("change", applyTheme);
   }, [themeMode]);
+
+  // Theme preference is managed entirely locally in cookies to prevent DB sync delay and flash of un-styled content.
 
   useEffect(() => {
     const onPopState = () => setRoute(currentRoute());
@@ -1002,8 +1146,16 @@ export function App() {
     await loadEvents();
   }, [loadEvents, notify]);
 
+  const updateThemeMode = useCallback((mode: ThemeMode) => {
+    setCookie(THEME_COOKIE_KEY, mode);
+    applyThemeMode(mode);
+    setThemeMode(mode);
+  }, []);
+
   const saveUserSettings = useCallback(async (patch: Partial<UserSettings>) => {
-    setUserSettings(await api.saveUserSettings(patch));
+    setUserSettings((current) => current ? { ...current, ...patch } : current);
+    const saved = await api.saveUserSettings(patch);
+    setUserSettings(saved);
     notify("User settings updated");
     await loadEvents();
   }, [loadEvents, notify]);
@@ -1022,67 +1174,202 @@ export function App() {
   }, [latestRun]);
 
   return (
-    <div className="min-h-screen bg-[#f4f1ec] text-stone-950 dark:bg-[#11100e] dark:text-stone-50">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200/70 bg-[#fbfaf7] px-4 py-5 shadow-[12px_0_48px_rgba(28,25,23,0.08)] dark:border-stone-800/70 dark:bg-[#171513] dark:shadow-[12px_0_48px_rgba(0,0,0,0.18)] lg:block">
-        <div className="mb-8">
-          <div className="font-semibold">Consulenza360</div>
-          <div className="text-sm text-stone-500">EuroTLX ISIN checks</div>
-        </div>
-        <nav className="space-y-1">
-          <Button className="w-full justify-start rounded-full" variant={route === "/" ? "default" : "ghost"} onClick={() => navigate("/")}>
-            <Icon icon={DashboardBrowsingIcon} size={17} />
-            Dashboard
-          </Button>
-          <Button className="w-full justify-start rounded-full" variant={route === "/isin" ? "default" : "ghost"} onClick={() => navigate("/isin")}>
-            <Icon icon={LeftToRightListNumberIcon} size={17} />
-            ISIN List
-          </Button>
-          <Button className="w-full justify-start rounded-full" variant="ghost" onClick={() => setSearchOpen(true)}>
-            <Icon icon={SearchList02Icon} size={17} />
-            Search
-          </Button>
-          <Button className="w-full justify-start rounded-full" variant={route === "/logs" ? "default" : "ghost"} onClick={() => navigate("/logs")}>
-            <Icon icon={NewsIcon} size={17} />
-            Logs
-          </Button>
-          <div className="py-2">
-            <ThemeModeControl value={themeMode} onChange={setThemeMode} />
+    <div className="min-h-screen bg-stone-100 text-stone-950 dark:bg-stone-950 dark:text-stone-50">
+      <aside className="fixed inset-y-0 left-0 hidden w-20 xl:w-64 flex-col bg-stone-50 px-2 xl:px-4 py-5 shadow-sm dark:bg-stone-900 lg:flex z-20 transition-all duration-300">
+        <div className="mb-8 flex flex-col xl:flex-row items-center xl:justify-between px-2">
+          <div className="flex items-center justify-center w-full xl:w-auto xl:justify-start gap-2">
+            <span className="xl:hidden relative flex h-3 w-3 my-1">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-system opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-system"></span>
+            </span>
+            <div className="hidden xl:block">
+              <div className="font-bold tracking-tight text-stone-900 dark:text-stone-50 text-base flex items-center gap-2">
+                Consulenza360
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-system opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-system"></span>
+                </span>
+              </div>
+              <div className="text-xs text-stone-550 dark:text-stone-400 mt-0.5">EuroTLX ISIN checks</div>
+            </div>
           </div>
-          <Button className="w-full justify-start rounded-full" variant="ghost" onClick={() => setSettingsOpen(true)}>
-            <Icon icon={Settings05Icon} size={17} />
-            Settings
+        </div>
+        <nav className="space-y-1 flex flex-col items-center xl:items-stretch">
+          <Button
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            variant={route === "/" ? "default" : "ghost"}
+            onClick={() => navigate("/")}
+            title="Dashboard"
+          >
+            <Icon icon={DashboardBrowsingIcon} size={16} />
+            <span className="hidden xl:inline">Dashboard</span>
+          </Button>
+          <Button
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            variant={route === "/isin" ? "default" : "ghost"}
+            onClick={() => navigate("/isin")}
+            title="ISIN List"
+          >
+            <Icon icon={LeftToRightListNumberIcon} size={16} />
+            <span className="hidden xl:inline">ISIN List</span>
+          </Button>
+          <Button
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            variant="ghost"
+            onClick={() => setSearchOpen(true)}
+            title="Search"
+          >
+            <Icon icon={SearchList02Icon} size={16} />
+            <span className="hidden xl:inline">Search</span>
+          </Button>
+          <Button
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            variant={route === "/logs" ? "default" : "ghost"}
+            onClick={() => navigate("/logs")}
+            title="Logs"
+          >
+            <Icon icon={NewsIcon} size={16} />
+            <span className="hidden xl:inline">Logs</span>
           </Button>
         </nav>
-        <div className="absolute bottom-5 left-4 right-4">
-          {identity?.authenticated ? (
-            <Button asChild className="w-full justify-start rounded-full" variant="ghost">
-              <a href="/cdn-cgi/access/logout"><Icon icon={Logout01Icon} size={17} />Log out</a>
-            </Button>
-          ) : (
-            <Button asChild className="w-full justify-start rounded-full" variant="ghost">
-              <a href="/"><Icon icon={Login01Icon} size={17} />Log in</a>
-            </Button>
-          )}
+        <div className="mt-auto space-y-3.5">
+          <div className="border-t border-stone-200/50 dark:border-stone-850/60 pt-4 mb-14 w-full flex justify-center">
+            <div className="hidden xl:flex justify-center w-full">
+              <ThemeModeControl value={themeMode} onChange={updateThemeMode} />
+            </div>
+            <div className="xl:hidden flex justify-center w-full">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full text-stone-500 hover:text-cyan-500"
+                onClick={() => {
+                  const modes: ThemeMode[] = ["light", "dark", "device"];
+                  const nextIndex = (modes.indexOf(themeMode) + 1) % modes.length;
+                  updateThemeMode(modes[nextIndex]);
+                }}
+                title={`Theme: ${themeMode} (click to change)`}
+              >
+                <Icon
+                  icon={
+                    themeMode === "light"
+                      ? Sun01Icon
+                      : themeMode === "dark"
+                        ? Moon02Icon
+                        : LaptopIcon
+                  }
+                  size={16}
+                />
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1 flex flex-col items-center xl:items-stretch">
+            {identity?.authenticated ? (
+              <Button
+                className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+                variant="ghost"
+                onClick={() => setSettingsOpen(true)}
+                title="Settings"
+              >
+                <Icon icon={Settings05Icon} size={16} />
+                <span className="hidden xl:inline">Settings</span>
+              </Button>
+            ) : null}
+            {identity?.authenticated ? (
+              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
+                <a href="/cdn-cgi/access/logout" title="Log out">
+                  <Icon icon={Logout01Icon} size={16} />
+                  <span className="hidden xl:inline">Log out</span>
+                </a>
+              </Button>
+            ) : (
+              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
+                <a href="/" title="Log in">
+                  <Icon icon={Login01Icon} size={16} />
+                  <span className="hidden xl:inline">Log in</span>
+                </a>
+              </Button>
+            )}
+          </div>
         </div>
       </aside>
 
-      <main className="lg:pl-64">
-        <header className="sticky top-0 z-10 border-b border-stone-200/70 bg-[#f4f1ec]/90 px-4 py-3 backdrop-blur-xl dark:border-stone-800/70 dark:bg-[#11100e]/90 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+      <main className="lg:pl-20 xl:pl-64 transition-all duration-300">
+        <header className="sticky top-0 z-10 bg-white/65 px-4 py-3.5 backdrop-blur-md dark:bg-stone-950/70 sm:px-6 shadow-sm shadow-stone-900/5 dark:shadow-black/10">
+          <div className="flex flex-row flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-xl font-semibold tracking-normal">EuroTLX ISIN Dashboard</h1>
-              <p className="text-sm text-stone-500 dark:text-stone-400">Presence monitoring for the imported bond universe.</p>
+              <h1 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-50">EuroTLX ISIN Dashboard</h1>
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Presence monitoring for the imported bond universe.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={runActive ? "cyan" : "absent"}>{latestRun?.status ?? "idle"}</Badge>
-              <span className="hidden font-mono text-xs text-stone-500 dark:text-stone-400 sm:inline">
-                {formatTime(lastSyncedAt)}
-              </span>
+
+            <div className="flex flex-wrap items-center gap-5 text-right ml-auto">
+              {/* Sync Status (page automatic refresh status) */}
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[10px] uppercase tracking-wider text-stone-455 dark:text-stone-500 font-semibold">Sync Status</span>
+                <div className="flex items-center gap-1.5">
+                  {runActive ? (
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-system" />
+                  ) : (
+                    <span className="h-2 w-2 rounded-full bg-stone-400 dark:bg-stone-600" />
+                  )}
+                  <span className="font-mono text-xs text-stone-600 dark:text-stone-300">
+                    {formatTime(lastSyncedAt)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Vertical divider line */}
+              <div className="hidden sm:block h-7 w-px bg-stone-200 dark:bg-stone-800" />
+
+              {/* Last Run outcome & manual trigger */}
+              <div className="flex items-center gap-3">
+                {latestRun ? (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-[10px] uppercase tracking-wider text-stone-450 dark:text-stone-500 font-semibold">Last Run</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-medium text-stone-700 dark:text-stone-300">
+                        {latestRun.started_at ? formatDateTime(latestRun.started_at) : "Never"}
+                      </span>
+                      <Badge variant={
+                        latestRun.status === "completed"
+                          ? "present"
+                          : latestRun.status === "blocked" || latestRun.status === "failed"
+                            ? "error"
+                            : latestRun.status === "pending" || latestRun.status === "processing"
+                              ? "cyan"
+                              : "absent"
+                      }>
+                        {latestRun.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-[10px] uppercase tracking-wider text-stone-450 dark:text-stone-500 font-semibold">Last Run</span>
+                    <span className="text-xs font-mono font-medium text-stone-500">Never executed</span>
+                  </div>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={runActive}
+                  onClick={async () => {
+                    await api.startRun();
+                    notify("Manual run started");
+                    await loadDashboard();
+                    await loadEvents();
+                  }}
+                  className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
+                >
+                  <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn(runActive && "animate-spin text-system")} />
+                  <span>{runActive ? "Scanning..." : "Run Check"}</span>
+                </Button>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
+        <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
           {error ? (
             <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-3 text-sm text-rose-700 shadow-sm dark:border-rose-900/80 dark:bg-rose-950/50 dark:text-rose-300">
               {error}
@@ -1091,11 +1378,32 @@ export function App() {
 
           {route === "/" ? (
             <>
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard label="Active ISINs" value={summary?.active_isins ?? 0} detail="Source of truth in Supabase" />
-                <MetricCard label="Present" value={latestRun?.present_count ?? 0} detail="Latest EuroTLX matches" />
-                <MetricCard label="Errors" value={latestRun?.error_count ?? 0} detail={statusDetail} />
-                <MetricCard label="Last Run" value={latestRun ? latestRun.status : "Idle"} detail={formatDateTime(latestRun?.started_at)} />
+              <section className="grid gap-2 sm:gap-4 grid-cols-3">
+                <MetricCard
+                  label="Active ISINs"
+                  value={summary?.active_isins ?? 0}
+                  detail="Total universe in database"
+                  accentColor="system"
+                />
+                <MetricCard
+                  label="Present"
+                  value={latestRun?.present_count ?? 0}
+                  detail="Successfully found on EuroTLX"
+                  accentColor="present"
+                />
+                <MetricCard
+                  label="Absent"
+                  value={latestRun?.absent_count ?? 0}
+                  detail={
+                    <>
+                      Not found or unchecked
+                      {latestRun?.error_count ? (
+                        <span className="ml-1 text-rose-500 font-semibold">({latestRun.error_count} errors)</span>
+                      ) : null}
+                    </>
+                  }
+                  accentColor="absent"
+                />
               </section>
 
               {runActive && latestRun?.id ? <RunExecutionLog runId={latestRun.id} active={runActive} /> : null}
@@ -1175,11 +1483,12 @@ export function App() {
           await loadDashboard();
           await loadEvents();
         }}
+        onChangeThemeMode={updateThemeMode}
       />
       <AddEditIsinDialog open={editOpen} row={editingIsin} onOpenChange={setEditOpen} onSave={saveIsin} />
       <ImportIsinsDialog open={importOpen} onOpenChange={setImportOpen} onImport={importIsinRows} />
       {toast ? (
-        <div className="fixed right-4 top-4 z-[60] max-w-sm rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-sm shadow-xl dark:border-stone-800/80 dark:bg-stone-950 sm:right-4 sm:top-4 max-sm:left-1/2 max-sm:right-auto max-sm:top-4 max-sm:-translate-x-1/2">
+        <div className="fixed right-4 top-4 z-50 max-w-sm rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-sm shadow-xl dark:border-stone-800/80 dark:bg-stone-950 sm:right-4 sm:top-4 max-sm:left-1/2 max-sm:right-auto max-sm:top-4 max-sm:-translate-x-1/2">
           {toast.message}
         </div>
       ) : null}

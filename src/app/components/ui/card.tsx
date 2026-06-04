@@ -5,7 +5,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "min-w-0 rounded-2xl border border-stone-200/70 bg-white text-stone-950 shadow-[0_1px_2px_rgba(28,25,23,0.05),0_18px_45px_rgba(28,25,23,0.07)] dark:border-stone-800/70 dark:bg-stone-900/70 dark:text-stone-50 dark:shadow-[0_18px_45px_rgba(0,0,0,0.22)]",
+        "min-w-0 rounded-2xl border border-stone-200/70 bg-white text-stone-950 shadow-xl shadow-stone-950/5 dark:border-stone-800/70 dark:bg-stone-900/70 dark:text-stone-50 dark:shadow-black/20",
         className,
       )}
       {...props}
@@ -27,4 +27,8 @@ export function CardDescription({ className, ...props }: React.HTMLAttributes<HT
 
 export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("p-5 pt-0", className)} {...props} />;
+}
+
+export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("flex items-center p-5 pt-0", className)} {...props} />;
 }

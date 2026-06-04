@@ -34,7 +34,7 @@ export const ChartContainer = React.forwardRef<HTMLDivElement, ChartContainerPro
         ref={ref}
         data-chart={chartId}
         className={cn(
-          "flex aspect-auto justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-stone-500 [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-stone-200/70 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-stone-300 [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none dark:[&_.recharts-cartesian-axis-tick_text]:fill-stone-400 dark:[&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-stone-800/70 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-stone-700",
+          "chart-container flex aspect-auto justify-center text-xs",
           className,
         )}
         style={{ ...colorVars, ...style } as React.CSSProperties}
@@ -76,7 +76,7 @@ export function ChartTooltipContent({ active, payload, label, config }: ChartToo
 
           return (
             <div key={key} className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: item.color ?? `var(--color-${key})` }} />
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color ?? `var(--color-${key})` }} />
               <span className="flex-1 text-stone-500 dark:text-stone-400">{labelText}</span>
               <span className="font-mono font-medium text-stone-950 dark:text-stone-50">{item.value}</span>
             </div>

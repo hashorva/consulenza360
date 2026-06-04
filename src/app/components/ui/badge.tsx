@@ -6,10 +6,10 @@ const badgeVariants = cva("inline-flex items-center rounded-full border px-2.5 p
   variants: {
     variant: {
       default: "border-transparent bg-stone-950 text-stone-50 dark:bg-stone-50 dark:text-stone-950",
-      present: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-      absent: "border-stone-200 bg-stone-100 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300",
-      error: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300",
-      cyan: "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950 dark:text-cyan-300",
+      present: "border-present/20 bg-present/10 text-present",
+      absent: "border-absent/25 bg-absent/10 text-absent",
+      error: "border-error/20 bg-error/10 text-error",
+      cyan: "border-system/20 bg-system/10 text-system",
     },
   },
   defaultVariants: {
