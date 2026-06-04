@@ -139,7 +139,7 @@ function manualRunReasonLabel(reason: ManualRunDecision["reason"]) {
   return "Manual check is not available right now.";
 }
 
-function ManualRunDeniedToast({ decision }: { decision: ManualRunDecision }) {
+function ManualRunDeniedTooltip({ decision, onExpired }: { decision: ManualRunDecision; onExpired: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   const nextAllowedTime = decision.next_allowed_at ? new Date(decision.next_allowed_at).getTime() : null;
   const secondsLeft = nextAllowedTime ? Math.max(0, Math.ceil((nextAllowedTime - now) / 1000)) : decision.seconds_until_next;
@@ -150,17 +150,24 @@ function ManualRunDeniedToast({ decision }: { decision: ManualRunDecision }) {
     return () => window.clearInterval(interval);
   }, [nextAllowedTime]);
 
+  useEffect(() => {
+    if (!nextAllowedTime || secondsLeft > 0) return undefined;
+    const timeout = window.setTimeout(onExpired, 0);
+    return () => window.clearTimeout(timeout);
+  }, [nextAllowedTime, onExpired, secondsLeft]);
+
   return (
-    <div className="space-y-1">
+    <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-stone-200/80 bg-white p-3 text-left text-xs shadow-xl dark:border-stone-800/80 dark:bg-stone-950">
+      <div className="absolute -top-1.5 right-8 h-3 w-3 rotate-45 border-l border-t border-stone-200/80 bg-white dark:border-stone-800/80 dark:bg-stone-950" />
       <div className="font-medium">{manualRunReasonLabel(decision.reason)}</div>
       {decision.reason === "active_run" ? (
-        <div className="text-xs text-stone-500">Wait for the current queue run to finish before starting another one.</div>
+        <div className="mt-1 text-stone-500">Wait for the current queue run to finish before starting another one.</div>
       ) : (
-        <div className="text-xs text-stone-500">
+        <div className="mt-1 text-stone-500">
           Try again in <span className="font-mono font-semibold text-stone-800 dark:text-stone-100">{formatDuration(secondsLeft)}</span>.
         </div>
       )}
-      <div className="text-xs text-stone-500">
+      <div className="mt-1 text-stone-500">
         Manual runs left today: {decision.remaining_today}/{decision.manual_refresh_limit}
       </div>
     </div>
@@ -1039,6 +1046,7 @@ export function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; level: "success" | "error" | "info" } | null>(null);
   const [manualRunPending, setManualRunPending] = useState(false);
+  const [manualRunTooltipDecision, setManualRunTooltipDecision] = useState<ManualRunDecision | null>(null);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1063,6 +1071,12 @@ export function App() {
     const timeout = window.setTimeout(() => setToast(null), 3500);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (!manualRunTooltipDecision) return undefined;
+    const timeout = window.setTimeout(() => setManualRunTooltipDecision(null), 10000);
+    return () => window.clearTimeout(timeout);
+  }, [manualRunTooltipDecision]);
 
   const latestRun = summary?.latest_run;
   const runActive = latestRun?.status === "pending" || latestRun?.status === "processing";
@@ -1241,13 +1255,12 @@ export function App() {
       const decision = await api.startRun();
 
       if (!decision.allowed) {
-        sonnerToast.warning(<ManualRunDeniedToast decision={decision} />, {
-          duration: decision.reason === "active_run" ? 5000 : Math.min(Math.max(decision.seconds_until_next * 1000, 5000), 30000),
-        });
+        setManualRunTooltipDecision(decision);
         await loadDashboard();
         return;
       }
 
+      setManualRunTooltipDecision(null);
       sonnerToast.success("Manual run started", {
         description: `${decision.total_isins} ISINs queued. ${decision.remaining_today}/${decision.manual_refresh_limit} manual runs left today.`,
       });
@@ -1451,16 +1464,21 @@ export function App() {
                   </div>
                 )}
 
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={manualRunPending}
-                  onClick={startManualRun}
-                  className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
-                >
-                  <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn((runActive || manualRunPending) && "animate-spin text-system")} />
-                  <span>{runActive ? "Scanning..." : manualRunPending ? "Starting..." : "Run Check"}</span>
-                </Button>
+                <div className="relative">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={manualRunPending}
+                    onClick={startManualRun}
+                    className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
+                  >
+                    <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn((runActive || manualRunPending) && "animate-spin text-system")} />
+                    <span>{runActive ? "Scanning..." : manualRunPending ? "Starting..." : "Run Check"}</span>
+                  </Button>
+                  {manualRunTooltipDecision ? (
+                    <ManualRunDeniedTooltip decision={manualRunTooltipDecision} onExpired={() => setManualRunTooltipDecision(null)} />
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
