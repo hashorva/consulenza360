@@ -467,6 +467,7 @@ function IsinList({
   title = "ISIN Universe",
   description,
   management = false,
+  counts,
   onQuery,
   onStatus,
   onSorting,
@@ -481,6 +482,12 @@ function IsinList({
   title?: string;
   description?: ReactNode;
   management?: boolean;
+  counts?: {
+    all: number;
+    present: number;
+    absent: number;
+    error: number;
+  };
   onQuery: (value: string) => void;
   onStatus: (value: string) => void;
   onSorting: (value: SortingState) => void;
@@ -511,7 +518,7 @@ function IsinList({
             <CardDescription>{description ?? <><span className="font-mono font-medium text-stone-700 dark:text-stone-300">{activeCount}</span> active instruments</>}</CardDescription>
           </div>
           {!management ? (
-            <div className="inline-flex h-9 items-center rounded-full bg-stone-100 p-1 dark:bg-stone-900 border border-stone-200/50 dark:border-stone-800/60 shadow-inner">
+            <div className="inline-flex h-9 items-center rounded-full bg-stone-100 p-0.5 dark:bg-stone-900 border border-stone-200/50 dark:border-stone-800/60 shadow-inner">
               {[
                 { id: "all", label: "All" },
                 { id: "present", label: "Present" },
@@ -525,13 +532,29 @@ function IsinList({
                     type="button"
                     onClick={() => onStatus(tab.id)}
                     className={cn(
-                      "px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer duration-150 focus-visible:outline-none",
+                      "h-full px-3 text-xs font-semibold rounded-full transition-all cursor-pointer duration-150 focus-visible:outline-none inline-flex items-center justify-center gap-1.5",
                       active
                         ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100"
                         : "text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200"
                     )}
                   >
-                    {tab.label}
+                    <span>{tab.label}</span>
+                    {active && counts && (
+                      <Badge
+                        variant={
+                          tab.id === "all"
+                            ? "cyan"
+                            : tab.id === "present"
+                              ? "present"
+                              : tab.id === "absent"
+                                ? "absent"
+                                : "error"
+                        }
+                        className="px-1.5 py-0 text-[10px] font-mono leading-none h-4 min-w-4 flex items-center justify-center rounded-full border-none shadow-none"
+                      >
+                        {counts[tab.id as keyof typeof counts] ?? 0}
+                      </Badge>
+                    )}
                   </button>
                 );
               })}
@@ -1040,7 +1063,7 @@ export function App() {
   const [events, setEvents] = useState<AppEventListResponse | null>(null);
   const [runLogs, setRunLogs] = useState<RunLogs | null>(null);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState("present");
   const [sorting, setSorting] = useState<SortingState>([{ id: "isin", desc: false }]);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -1079,6 +1102,12 @@ export function App() {
   }, [manualRunTooltipDecision]);
 
   const latestRun = summary?.latest_run;
+  const isinCounts = useMemo(() => ({
+    all: summary?.active_isins ?? 0,
+    present: latestRun?.present_count ?? 0,
+    absent: latestRun?.absent_count ?? 0,
+    error: latestRun?.error_count ?? 0,
+  }), [summary, latestRun]);
   const isAuthenticated = identity?.authenticated === true;
   const runActive = latestRun?.status === "pending" || latestRun?.status === "processing";
 
@@ -1566,6 +1595,7 @@ export function App() {
                 query={query}
                 status={status}
                 sorting={sorting}
+                counts={isinCounts}
                 onQuery={setQuery}
                 onStatus={setStatus}
                 onSorting={setSorting}
@@ -1593,6 +1623,7 @@ export function App() {
                 sorting={sorting}
                 title="Active ISINs"
                 management
+                counts={isinCounts}
                 onQuery={setQuery}
                 onStatus={setStatus}
                 onSorting={setSorting}
