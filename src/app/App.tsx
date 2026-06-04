@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CancelCircleIcon,
   Home01Icon,
@@ -22,7 +22,7 @@ import {
 } from "recharts";
 import { getCoreRowModel, type SortingState, useReactTable } from "@tanstack/react-table";
 import { api } from "./lib/api";
-import { cn, formatDateTime } from "./lib/utils";
+import { cn, formatDateTime, formatTime } from "./lib/utils";
 import type { DashboardSummary, IsinListResponse, IsinRow, Settings } from "./types/api";
 import { Icon } from "./components/Icon";
 import { RunExecutionLog } from "./components/RunExecutionLog";
@@ -58,6 +58,8 @@ const historyChartConfig = {
 type ThemeMode = "light" | "dark" | "device";
 
 const THEME_STORAGE_KEY = "consulenza360-theme";
+const ACTIVE_REFRESH_MS = 4_000;
+const IDLE_REFRESH_MS = 15_000;
 
 function isThemeMode(value: string | null): value is ThemeMode {
   return value === "light" || value === "dark" || value === "device";
@@ -428,6 +430,7 @@ export function App() {
   const [status, setStatus] = useState("all");
   const [sorting, setSorting] = useState<SortingState>([{ id: "isin", desc: false }]);
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -445,20 +448,21 @@ export function App() {
   }, [themeMode]);
 
   const latestRun = summary?.latest_run;
-  const runActive = latestRun?.status === "processing";
+  const runActive = latestRun?.status === "pending" || latestRun?.status === "processing";
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       const [dashboardData, settingsData] = await Promise.all([api.dashboard(), api.settings()]);
       setSummary(dashboardData);
       setSettings(settingsData);
+      setLastSyncedAt(new Date().toISOString());
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard.");
     }
-  };
+  }, []);
 
-  const loadIsins = async () => {
+  const loadIsins = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         q: query,
@@ -473,21 +477,31 @@ export function App() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load ISIN list.");
     }
-  };
+  }, [query, sorting, status]);
 
   useEffect(() => {
     void loadDashboard();
-  }, []);
+  }, [loadDashboard]);
 
   useEffect(() => {
     void loadIsins();
-  }, [query, status, sorting]);
+  }, [loadIsins]);
 
   useEffect(() => {
-    if (!runActive) return;
-    const interval = window.setInterval(loadDashboard, 6000);
-    return () => window.clearInterval(interval);
-  }, [runActive]);
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadDashboard();
+      if (view === "dashboard") void loadIsins();
+    };
+
+    const interval = window.setInterval(refresh, runActive ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS);
+    window.addEventListener("focus", refresh);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [loadDashboard, loadIsins, runActive, view]);
 
   const statusDetail = useMemo(() => {
     if (!latestRun) return "No runs yet";
@@ -533,6 +547,9 @@ export function App() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={runActive ? "cyan" : "absent"}>{latestRun?.status ?? "idle"}</Badge>
+              <span className="hidden font-mono text-xs text-stone-500 dark:text-stone-400 sm:inline">
+                {formatTime(lastSyncedAt)}
+              </span>
             </div>
           </div>
         </header>
