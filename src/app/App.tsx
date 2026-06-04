@@ -511,7 +511,7 @@ function IsinList({
             <CardDescription>{description ?? <><span className="font-mono font-medium text-stone-700 dark:text-stone-300">{activeCount}</span> active instruments</>}</CardDescription>
           </div>
           {!management ? (
-            <div className="inline-flex h-9 items-center rounded-xl bg-stone-100 p-1 dark:bg-stone-900 border border-stone-200/50 dark:border-stone-800/60 shadow-inner">
+            <div className="inline-flex h-9 items-center rounded-full bg-stone-100 p-1 dark:bg-stone-900 border border-stone-200/50 dark:border-stone-800/60 shadow-inner">
               {[
                 { id: "all", label: "All" },
                 { id: "present", label: "Present" },
@@ -525,7 +525,7 @@ function IsinList({
                     type="button"
                     onClick={() => onStatus(tab.id)}
                     className={cn(
-                      "px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer duration-150 focus-visible:outline-none",
+                      "px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer duration-150 focus-visible:outline-none",
                       active
                         ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100"
                         : "text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200"
@@ -1079,6 +1079,7 @@ export function App() {
   }, [manualRunTooltipDecision]);
 
   const latestRun = summary?.latest_run;
+  const isAuthenticated = identity?.authenticated === true;
   const runActive = latestRun?.status === "pending" || latestRun?.status === "processing";
 
   const navigate = useCallback((nextRoute: AppRoute) => {
@@ -1092,16 +1093,25 @@ export function App() {
 
   const loadDashboard = useCallback(async () => {
     try {
-      const [dashboardData, settingsData, userSettingsData, identityData] = await Promise.all([
-        api.dashboard(),
-        api.settings(),
-        api.userSettings(),
+      const [identityData, dashboardData] = await Promise.all([
         api.me(),
+        api.dashboard(),
       ]);
       setSummary(dashboardData);
-      setSettings(settingsData);
-      setUserSettings(userSettingsData);
       setIdentity(identityData);
+
+      if (identityData.authenticated) {
+        const [settingsData, userSettingsData] = await Promise.all([
+          api.settings(),
+          api.userSettings(),
+        ]);
+        setSettings(settingsData);
+        setUserSettings(userSettingsData);
+      } else {
+        setSettings(null);
+        setUserSettings(null);
+      }
+
       setLastSyncedAt(new Date().toISOString());
       setError(null);
     } catch (loadError) {
@@ -1149,23 +1159,32 @@ export function App() {
   }, [loadDashboard]);
 
   useEffect(() => {
+    if (identity?.authenticated !== false) return;
+    if (route !== "/isin" && route !== "/logs") return;
+
+    window.history.replaceState({}, "", "/");
+    setRoute("/");
+  }, [identity?.authenticated, route]);
+
+  useEffect(() => {
     void loadIsins();
   }, [loadIsins]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     if (route === "/isin") void loadDeletedIsins();
     if (route === "/logs") {
       void loadEvents();
       void loadRunLogs();
     }
-  }, [loadDeletedIsins, loadEvents, loadRunLogs, route]);
+  }, [isAuthenticated, loadDeletedIsins, loadEvents, loadRunLogs, route]);
 
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
       void loadDashboard();
       if (route === "/" || route === "/isin") void loadIsins();
-      if (route === "/logs") void loadEvents();
+      if (route === "/logs" && isAuthenticated) void loadEvents();
     };
 
     const interval = window.setInterval(refresh, runActive ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS);
@@ -1175,9 +1194,11 @@ export function App() {
       window.clearInterval(interval);
       window.removeEventListener("focus", refresh);
     };
-  }, [loadDashboard, loadEvents, loadIsins, route, runActive]);
+  }, [isAuthenticated, loadDashboard, loadEvents, loadIsins, route, runActive]);
 
   const saveIsin = useCallback(async (body: { isin: string; bond_name: string }) => {
+    if (!isAuthenticated) return;
+
     try {
       if (editingIsin) {
         await api.updateIsin(editingIsin.isin, { bond_name: body.bond_name });
@@ -1195,9 +1216,11 @@ export function App() {
       notify(message, "error");
       setError(message);
     }
-  }, [editingIsin, loadEvents, loadIsins, notify]);
+  }, [editingIsin, isAuthenticated, loadEvents, loadIsins, notify]);
 
   const importIsinRows = useCallback(async (rows: Array<{ isin: string; bond_name: string }>) => {
+    if (!isAuthenticated) return;
+
     try {
       const result = await api.importIsins(rows);
       notify(`${result.imported} ISINs imported`);
@@ -1209,29 +1232,35 @@ export function App() {
       notify(message, "error");
       setError(message);
     }
-  }, [loadEvents, loadIsins, notify]);
+  }, [isAuthenticated, loadEvents, loadIsins, notify]);
 
   const deleteIsin = useCallback(async (isin: string) => {
+    if (!isAuthenticated) return;
+
     await api.deleteIsin(isin);
     notify(`ISIN ${isin} deleted`);
     await loadIsins();
     await loadDeletedIsins();
     await loadEvents();
-  }, [loadDeletedIsins, loadEvents, loadIsins, notify]);
+  }, [isAuthenticated, loadDeletedIsins, loadEvents, loadIsins, notify]);
 
   const restoreIsin = useCallback(async (isin: string) => {
+    if (!isAuthenticated) return;
+
     await api.restoreIsin(isin);
     notify(`ISIN ${isin} restored`);
     await loadIsins();
     await loadDeletedIsins();
     await loadEvents();
-  }, [loadDeletedIsins, loadEvents, loadIsins, notify]);
+  }, [isAuthenticated, loadDeletedIsins, loadEvents, loadIsins, notify]);
 
   const saveSettings = useCallback(async (patch: Partial<Settings>) => {
+    if (!isAuthenticated) return;
+
     setSettings(await api.saveSettings(patch));
     notify("Operations settings updated");
     await loadEvents();
-  }, [loadEvents, notify]);
+  }, [isAuthenticated, loadEvents, notify]);
 
   const updateThemeMode = useCallback((mode: ThemeMode) => {
     setCookie(THEME_COOKIE_KEY, mode);
@@ -1240,15 +1269,17 @@ export function App() {
   }, []);
 
   const saveUserSettings = useCallback(async (patch: Partial<UserSettings>) => {
+    if (!isAuthenticated) return;
+
     setUserSettings((current) => current ? { ...current, ...patch } : current);
     const saved = await api.saveUserSettings(patch);
     setUserSettings(saved);
     notify("User settings updated");
     await loadEvents();
-  }, [loadEvents, notify]);
+  }, [isAuthenticated, loadEvents, notify]);
 
   const startManualRun = useCallback(async () => {
-    if (manualRunPending) return;
+    if (!isAuthenticated || manualRunPending) return;
     setManualRunPending(true);
 
     try {
@@ -1273,7 +1304,7 @@ export function App() {
     } finally {
       setManualRunPending(false);
     }
-  }, [loadDashboard, loadEvents, manualRunPending]);
+  }, [isAuthenticated, loadDashboard, loadEvents, manualRunPending]);
 
   const statusDetail = useMemo(() => {
     if (!latestRun) return "No runs yet";
@@ -1319,15 +1350,17 @@ export function App() {
             <Icon icon={DashboardBrowsingIcon} size={16} />
             <span className="hidden xl:inline">Dashboard</span>
           </Button>
-          <Button
-            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
-            variant={route === "/isin" ? "default" : "ghost"}
-            onClick={() => navigate("/isin")}
-            title="ISIN List"
-          >
-            <Icon icon={LeftToRightListNumberIcon} size={16} />
-            <span className="hidden xl:inline">ISIN List</span>
-          </Button>
+          {isAuthenticated ? (
+            <Button
+              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+              variant={route === "/isin" ? "default" : "ghost"}
+              onClick={() => navigate("/isin")}
+              title="ISIN List"
+            >
+              <Icon icon={LeftToRightListNumberIcon} size={16} />
+              <span className="hidden xl:inline">ISIN List</span>
+            </Button>
+          ) : null}
           <Button
             className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
             variant="ghost"
@@ -1337,15 +1370,17 @@ export function App() {
             <Icon icon={SearchList02Icon} size={16} />
             <span className="hidden xl:inline">Search</span>
           </Button>
-          <Button
-            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
-            variant={route === "/logs" ? "default" : "ghost"}
-            onClick={() => navigate("/logs")}
-            title="Logs"
-          >
-            <Icon icon={NewsIcon} size={16} />
-            <span className="hidden xl:inline">Logs</span>
-          </Button>
+          {isAuthenticated ? (
+            <Button
+              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+              variant={route === "/logs" ? "default" : "ghost"}
+              onClick={() => navigate("/logs")}
+              title="Logs"
+            >
+              <Icon icon={NewsIcon} size={16} />
+              <span className="hidden xl:inline">Logs</span>
+            </Button>
+          ) : null}
         </nav>
         <div className="mt-auto space-y-3.5">
           <div className="border-t border-stone-200/50 dark:border-stone-850/60 pt-4 mb-14 w-full flex justify-center">
@@ -1398,7 +1433,7 @@ export function App() {
               </Button>
             ) : (
               <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
-                <a href="/" title="Log in">
+                <a href="/api/auth/login?redirect=/" title="Log in">
                   <Icon icon={Login01Icon} size={16} />
                   <span className="hidden xl:inline">Log in</span>
                 </a>
@@ -1464,21 +1499,23 @@ export function App() {
                   </div>
                 )}
 
-                <div className="relative">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={manualRunPending}
-                    onClick={startManualRun}
-                    className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
-                  >
-                    <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn((runActive || manualRunPending) && "animate-spin text-system")} />
-                    <span>{runActive ? "Scanning..." : manualRunPending ? "Starting..." : "Run Check"}</span>
-                  </Button>
-                  {manualRunTooltipDecision ? (
-                    <ManualRunDeniedTooltip decision={manualRunTooltipDecision} onExpired={() => setManualRunTooltipDecision(null)} />
-                  ) : null}
-                </div>
+                {isAuthenticated ? (
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={manualRunPending}
+                      onClick={startManualRun}
+                      className="rounded-full shadow-inner hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 duration-200 transition-all gap-1.5 h-8 text-xs font-semibold px-3"
+                    >
+                      <Icon icon={ArrowReloadHorizontalIcon} size={13} className={cn((runActive || manualRunPending) && "animate-spin text-system")} />
+                      <span>{runActive ? "Scanning..." : manualRunPending ? "Starting..." : "Run Check"}</span>
+                    </Button>
+                    {manualRunTooltipDecision ? (
+                      <ManualRunDeniedTooltip decision={manualRunTooltipDecision} onExpired={() => setManualRunTooltipDecision(null)} />
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -1532,12 +1569,12 @@ export function App() {
                 onQuery={setQuery}
                 onStatus={setStatus}
                 onSorting={setSorting}
-                onDelete={deleteIsin}
+                onDelete={isAuthenticated ? deleteIsin : undefined}
               />
             </>
           ) : null}
 
-          {route === "/isin" ? (
+          {route === "/isin" && isAuthenticated ? (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1578,7 +1615,7 @@ export function App() {
             </div>
           ) : null}
 
-          {route === "/logs" ? <LogsPage events={events} runLogs={runLogs} /> : null}
+          {route === "/logs" && isAuthenticated ? <LogsPage events={events} runLogs={runLogs} /> : null}
         </div>
       </main>
       <SearchDialog open={searchOpen} query={query} data={isins} onOpenChange={setSearchOpen} onQuery={setQuery} />

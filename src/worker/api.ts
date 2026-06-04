@@ -1,4 +1,4 @@
-import { requireAccess, type AccessIdentity } from "./access";
+import { getOptionalAccess, requireAccess, type AccessIdentity } from "./access";
 import { ApiError, jsonResponse, readJson } from "./http";
 import { startManualRun } from "./runner";
 import { createSupabase } from "./supabase";
@@ -83,18 +83,25 @@ async function recordEvent(
 }
 
 export async function handleApi(request: Request, env: Env): Promise<Response> {
-  const identity = await requireAccess(request, env);
-
   const url = new URL(request.url);
-  const supabase = createSupabase(env);
 
   if (url.pathname === "/api/health") {
     return jsonResponse({ ok: true });
   }
 
   if (url.pathname === "/api/me" && request.method === "GET") {
-    return jsonResponse({ email: identity.email ?? null, sub: identity.sub ?? null, authenticated: true });
+    const identity = await getOptionalAccess(request, env);
+    return jsonResponse({ email: identity?.email ?? null, sub: identity?.sub ?? null, authenticated: Boolean(identity) });
   }
+
+  if (url.pathname === "/api/auth/login" && request.method === "GET") {
+    await requireAccess(request, env);
+    const redirectPath = url.searchParams.get("redirect") ?? "/";
+    const safeRedirectPath = redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "/";
+    return Response.redirect(new URL(safeRedirectPath, url.origin).toString(), 302);
+  }
+
+  const supabase = createSupabase(env);
 
   if (url.pathname === "/api/dashboard" && request.method === "GET") {
     const { data, error } = await supabase.rpc("get_dashboard_summary");
@@ -116,6 +123,17 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     if (error) throw error;
     return jsonResponse(data);
   }
+
+  const logMatch = url.pathname.match(/^\/api\/runs\/([0-9a-f-]{36})\/logs$/i);
+  if (logMatch && request.method === "GET") {
+    const { data, error } = await supabase.rpc("get_run_logs", {
+      target_run_id: logMatch[1],
+    });
+    if (error) throw error;
+    return jsonResponse(data);
+  }
+
+  const identity = await requireAccess(request, env);
 
   if (url.pathname === "/api/isins" && request.method === "POST") {
     const body = await readJson<AddIsinBody>(request);
@@ -387,15 +405,6 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       },
     });
     return jsonResponse(run, { status: 202 });
-  }
-
-  const logMatch = url.pathname.match(/^\/api\/runs\/([0-9a-f-]{36})\/logs$/i);
-  if (logMatch && request.method === "GET") {
-    const { data, error } = await supabase.rpc("get_run_logs", {
-      target_run_id: logMatch[1],
-    });
-    if (error) throw error;
-    return jsonResponse(data);
   }
 
   throw new ApiError(404, "API route not found.");

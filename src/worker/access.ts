@@ -58,21 +58,16 @@ async function getJwks(teamDomain: string): Promise<JwkSet> {
   return jwks;
 }
 
-export async function requireAccess(request: Request, env: Env): Promise<AccessIdentity> {
-  if (!env.CF_ACCESS_TEAM_DOMAIN || !env.CF_ACCESS_AUD) {
-    const hostname = new URL(request.url).hostname;
-    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-    if (env.APP_ENV === "production" && !isLocalhost) {
-      throw new ApiError(500, "Cloudflare Access validation is not configured.");
-    }
-    return { email: "local-dev@example.test" };
+function localDevelopmentIdentity(request: Request, env: Env): AccessIdentity | null {
+  const hostname = new URL(request.url).hostname;
+  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  if (env.APP_ENV === "production" && !isLocalhost) {
+    return null;
   }
+  return { email: "local-dev@example.test" };
+}
 
-  const token = request.headers.get("CF-Access-JWT-Assertion");
-  if (!token) {
-    throw new ApiError(401, "Missing Cloudflare Access assertion.");
-  }
-
+async function verifyAccessToken(token: string, teamDomain: string, expectedAud: string): Promise<AccessIdentity> {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     throw new ApiError(401, "Invalid Cloudflare Access assertion.");
@@ -87,11 +82,11 @@ export async function requireAccess(request: Request, env: Env): Promise<AccessI
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
     throw new ApiError(401, "Expired Cloudflare Access assertion.");
   }
-  if (!hasExpectedAudience(payload, env.CF_ACCESS_AUD)) {
+  if (!hasExpectedAudience(payload, expectedAud)) {
     throw new ApiError(403, "Cloudflare Access audience mismatch.");
   }
 
-  const jwks = await getJwks(env.CF_ACCESS_TEAM_DOMAIN);
+  const jwks = await getJwks(teamDomain);
   const jwk = jwks.keys.find((candidate) => candidate.kid === header.kid);
   if (!jwk) {
     throw new ApiError(401, "Cloudflare Access signing key not found.");
@@ -120,4 +115,32 @@ export async function requireAccess(request: Request, env: Env): Promise<AccessI
     email: payload.email,
     sub: payload.sub,
   };
+}
+
+export async function getOptionalAccess(request: Request, env: Env): Promise<AccessIdentity | null> {
+  if (!env.CF_ACCESS_TEAM_DOMAIN || !env.CF_ACCESS_AUD) {
+    return localDevelopmentIdentity(request, env);
+  }
+
+  const token = request.headers.get("CF-Access-JWT-Assertion");
+  if (!token) {
+    return null;
+  }
+
+  return verifyAccessToken(token, env.CF_ACCESS_TEAM_DOMAIN, env.CF_ACCESS_AUD);
+}
+
+export async function requireAccess(request: Request, env: Env): Promise<AccessIdentity> {
+  if (!env.CF_ACCESS_TEAM_DOMAIN || !env.CF_ACCESS_AUD) {
+    const identity = localDevelopmentIdentity(request, env);
+    if (identity) return identity;
+    throw new ApiError(500, "Cloudflare Access validation is not configured.");
+  }
+
+  const token = request.headers.get("CF-Access-JWT-Assertion");
+  if (!token) {
+    throw new ApiError(401, "Missing Cloudflare Access assertion.");
+  }
+
+  return verifyAccessToken(token, env.CF_ACCESS_TEAM_DOMAIN, env.CF_ACCESS_AUD);
 }
