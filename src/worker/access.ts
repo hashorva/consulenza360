@@ -37,6 +37,23 @@ function hasExpectedAudience(payload: { aud?: string | string[] }, expectedAud: 
   return payload.aud === expectedAud;
 }
 
+function accessTokenFromRequest(request: Request) {
+  const assertion = request.headers.get("CF-Access-JWT-Assertion");
+  if (assertion) return assertion;
+
+  const cookie = request.headers.get("cookie");
+  if (!cookie) return null;
+
+  for (const part of cookie.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === "CF_Authorization") {
+      return rawValue.join("=");
+    }
+  }
+
+  return null;
+}
+
 async function getJwks(teamDomain: string): Promise<JwkSet> {
   const cached = jwksCache.get(teamDomain);
   if (cached && cached.expiresAt > Date.now()) {
@@ -122,12 +139,16 @@ export async function getOptionalAccess(request: Request, env: Env): Promise<Acc
     return localDevelopmentIdentity(request, env);
   }
 
-  const token = request.headers.get("CF-Access-JWT-Assertion");
+  const token = accessTokenFromRequest(request);
   if (!token) {
     return null;
   }
 
-  return verifyAccessToken(token, env.CF_ACCESS_TEAM_DOMAIN, env.CF_ACCESS_AUD);
+  try {
+    return await verifyAccessToken(token, env.CF_ACCESS_TEAM_DOMAIN, env.CF_ACCESS_AUD);
+  } catch {
+    return null;
+  }
 }
 
 export async function requireAccess(request: Request, env: Env): Promise<AccessIdentity> {
@@ -137,7 +158,7 @@ export async function requireAccess(request: Request, env: Env): Promise<AccessI
     throw new ApiError(500, "Cloudflare Access validation is not configured.");
   }
 
-  const token = request.headers.get("CF-Access-JWT-Assertion");
+  const token = accessTokenFromRequest(request);
   if (!token) {
     throw new ApiError(401, "Missing Cloudflare Access assertion.");
   }

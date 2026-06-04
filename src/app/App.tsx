@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Add01Icon,
   ArchiveRestoreIcon,
@@ -606,17 +606,17 @@ function IsinList({
                   </a>
                 </Button>
               ) : null}
-              {onEdit ? (
+              {management && onEdit ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-cyan-500 dark:hover:text-cyan-400" onClick={() => onEdit(row)} aria-label={`Edit ${row.isin}`}>
                   <Icon icon={Edit01Icon} size={15} />
                 </Button>
               ) : null}
-              {onRestore && !row.active ? (
+              {management && onRestore && !row.active ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-cyan-500 dark:hover:text-cyan-400" onClick={() => onRestore(row.isin)} aria-label={`Restore ${row.isin}`}>
                   <Icon icon={ArchiveRestoreIcon} size={15} />
                 </Button>
               ) : null}
-              {onDelete && row.active !== false ? (
+              {management && onDelete && row.active !== false ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg text-stone-500 dark:text-stone-400 hover:text-rose-500 dark:hover:text-rose-400" onClick={() => onDelete(row.isin)} aria-label={`Delete ${row.isin}`}>
                   <Icon icon={Delete02Icon} size={15} />
                 </Button>
@@ -1116,6 +1116,23 @@ export function App() {
     setRoute(nextRoute);
   }, []);
 
+  const logout = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    void (async () => {
+      try {
+        await fetch("/cdn-cgi/access/logout", {
+          credentials: "include",
+          cache: "no-store",
+          redirect: "manual",
+        });
+      } catch {
+        // Access logout may terminate through a cross-origin redirect; still return to the public dashboard.
+      } finally {
+        window.location.assign("/");
+      }
+    })();
+  }, []);
+
   const notify = useCallback((message: string, level: "success" | "error" | "info" = "success") => {
     setToast({ message, level });
   }, []);
@@ -1455,7 +1472,7 @@ export function App() {
             ) : null}
             {identity?.authenticated ? (
               <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
-                <a href="/cdn-cgi/access/logout" title="Log out">
+                <a href="/cdn-cgi/access/logout" onClick={logout} title="Log out">
                   <Icon icon={Logout01Icon} size={16} />
                   <span className="hidden xl:inline">Log out</span>
                 </a>
@@ -1599,7 +1616,6 @@ export function App() {
                 onQuery={setQuery}
                 onStatus={setStatus}
                 onSorting={setSorting}
-                onDelete={isAuthenticated ? deleteIsin : undefined}
               />
             </>
           ) : null}

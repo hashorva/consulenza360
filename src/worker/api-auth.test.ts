@@ -1,15 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleApi } from "./api";
 import { errorResponse } from "./http";
 import type { Env, RunMessage } from "./types";
 
-const mocks = vi.hoisted(() => ({
-  createSupabase: vi.fn(),
-  supabase: {
-    rpc: vi.fn(),
-    from: vi.fn(),
-  },
-}));
+const mocks = vi.hoisted(() => {
+  const completeChain = {
+    select: vi.fn(),
+  };
+  const updateChain = {
+    eq: vi.fn(() => completeChain),
+  };
+  return {
+    createSupabase: vi.fn(),
+    completeChain,
+    updateChain,
+    supabase: {
+      rpc: vi.fn(),
+      from: vi.fn(() => ({
+        update: vi.fn(() => updateChain),
+      })),
+    },
+  };
+});
 
 vi.mock("./supabase", () => ({
   createSupabase: mocks.createSupabase,
@@ -50,6 +62,36 @@ const runLogs = {
   recentChecks: [],
 };
 
+const encoder = new TextEncoder();
+const keyPair = await crypto.subtle.generateKey(
+  {
+    name: "RSASSA-PKCS1-v1_5",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+    hash: "SHA-256",
+  },
+  true,
+  ["sign", "verify"],
+);
+const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+
+function base64Url(value: Uint8Array) {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function accessJwt(payload: Record<string, unknown>) {
+  const header = base64Url(encoder.encode(JSON.stringify({ alg: "RS256", kid: "test-key" })));
+  const body = base64Url(encoder.encode(JSON.stringify(payload)));
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    keyPair.privateKey,
+    encoder.encode(`${header}.${body}`),
+  );
+  return `${header}.${body}.${base64Url(new Uint8Array(signature))}`;
+}
+
 function env(): Env {
   return {
     ASSETS: {} as Fetcher,
@@ -74,14 +116,31 @@ describe("API guest visibility", () => {
   beforeEach(() => {
     mocks.createSupabase.mockReset();
     mocks.createSupabase.mockReturnValue(mocks.supabase);
+    mocks.completeChain.select.mockReset();
+    mocks.completeChain.select.mockResolvedValue({ error: null });
+    mocks.updateChain.eq.mockClear();
     mocks.supabase.from.mockReset();
+    mocks.supabase.from.mockReturnValue({
+      update: vi.fn(() => mocks.updateChain),
+    });
     mocks.supabase.rpc.mockReset();
     mocks.supabase.rpc.mockImplementation(async (name: string) => {
       if (name === "get_dashboard_summary") return { data: dashboardSummary, error: null };
       if (name === "list_isins") return { data: isinList, error: null };
       if (name === "get_run_logs") return { data: runLogs, error: null };
+      if (name === "record_app_event") return { data: null, error: null };
       return { data: null, error: new Error(`Unexpected RPC: ${name}`) };
     });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "https://team.example.com/cdn-cgi/access/certs") {
+        return Response.json({ keys: [{ ...publicJwk, kid: "test-key" }] });
+      }
+      return new Response(null, { status: 404 });
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("reports anonymous visitors without requiring Supabase", async () => {
@@ -91,6 +150,45 @@ describe("API guest visibility", () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({ email: null, sub: null, authenticated: false });
     expect(mocks.createSupabase).not.toHaveBeenCalled();
+  });
+
+  it("reports authenticated visitors from the Access cookie on public routes", async () => {
+    const token = await accessJwt({
+      aud: "access-audience",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      email: "user@example.com",
+      sub: "user-subject",
+    });
+
+    const response = await responseFor("/api/me", {
+      headers: { cookie: `CF_Authorization=${token}` },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ email: "user@example.com", sub: "user-subject", authenticated: true });
+    expect(mocks.createSupabase).not.toHaveBeenCalled();
+  });
+
+  it("allows protected actions with a valid Access cookie", async () => {
+    const token = await accessJwt({
+      aud: "access-audience",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      email: "user@example.com",
+      sub: "user-subject",
+    });
+
+    const response = await responseFor("/api/isins/XS2317069685", {
+      method: "DELETE",
+      headers: { cookie: `CF_Authorization=${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(mocks.supabase.rpc).toHaveBeenCalledWith("record_app_event", expect.objectContaining({
+      event_actor_email: "user@example.com",
+      event_entity_id: "XS2317069685",
+    }));
   });
 
   it("keeps the login handoff behind Access", async () => {
