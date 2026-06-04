@@ -32,6 +32,8 @@ export type IsinRow = {
   isin: string;
   bond_name: string;
   active: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   status: CheckStatus | null;
   checked_at: string | null;
   response_time: number | null;
@@ -51,6 +53,38 @@ export type Settings = {
   run_hour: number;
   weekday_only: boolean;
   updated_at: string;
+};
+
+export type UserSettings = {
+  identity_email: string;
+  theme_preference: "light" | "dark" | "device";
+  timezone: string;
+  dashboard_refresh_seconds: number;
+  chart_display: string;
+  updated_at: string;
+};
+
+export type AppEvent = {
+  id: string;
+  source: "user" | "worker";
+  level: "info" | "success" | "warning" | "error";
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  actor_email: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AppEventListResponse = {
+  rows: AppEvent[];
+  total: number;
+};
+
+export type Identity = {
+  authenticated: boolean;
+  email: string | null;
+  sub: string | null;
 };
 
 export type RunLogs = {
@@ -75,4 +109,3 @@ export type RunLogs = {
     claimed_at: string | null;
   }>;
 };
-

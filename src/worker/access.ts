@@ -7,7 +7,7 @@ type JwkSet = {
   keys: AccessJwk[];
 };
 
-type AccessIdentity = {
+export type AccessIdentity = {
   email?: string;
   sub?: string;
 };
