@@ -1388,7 +1388,7 @@ export function App() {
         </div>
         <nav className="space-y-1 flex flex-col items-center xl:items-stretch">
           <Button
-            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0"
             variant={route === "/" ? "default" : "ghost"}
             onClick={() => navigate("/")}
             title="Dashboard"
@@ -1398,7 +1398,7 @@ export function App() {
           </Button>
           {isAuthenticated ? (
             <Button
-              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0"
               variant={route === "/isin" ? "default" : "ghost"}
               onClick={() => navigate("/isin")}
               title="ISIN List"
@@ -1408,7 +1408,7 @@ export function App() {
             </Button>
           ) : null}
           <Button
-            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+            className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0"
             variant="ghost"
             onClick={() => setSearchOpen(true)}
             title="Search"
@@ -1418,7 +1418,7 @@ export function App() {
           </Button>
           {isAuthenticated ? (
             <Button
-              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+              className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0"
               variant={route === "/logs" ? "default" : "ghost"}
               onClick={() => navigate("/logs")}
               title="Logs"
@@ -1461,7 +1461,7 @@ export function App() {
           <div className="space-y-1 flex flex-col items-center xl:items-stretch">
             {identity?.authenticated ? (
               <Button
-                className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0"
+                className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0"
                 variant="ghost"
                 onClick={() => setSettingsOpen(true)}
                 title="Settings"
@@ -1471,14 +1471,14 @@ export function App() {
               </Button>
             ) : null}
             {identity?.authenticated ? (
-              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
+              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0" variant="ghost">
                 <a href="/cdn-cgi/access/logout" onClick={logout} title="Log out">
                   <Icon icon={Logout01Icon} size={16} />
                   <span className="hidden xl:inline">Log out</span>
                 </a>
               </Button>
             ) : (
-              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 flex-shrink-0" variant="ghost">
+              <Button asChild className="w-9 xl:w-full justify-center xl:justify-start rounded-full px-0 xl:px-4 shrink-0" variant="ghost">
                 <a href="/api/auth/login?redirect=/" title="Log in">
                   <Icon icon={Login01Icon} size={16} />
                   <span className="hidden xl:inline">Log in</span>
