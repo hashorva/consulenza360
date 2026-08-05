@@ -31,7 +31,7 @@ Use shadcn/create or the shadcn CLI with the Vite template, Radix base, and the
 been `b2D0wqNxT`, but ALWAYS verify the current code on shadcn/create before running:
 
 ```bash
-npx shadcn@latest init --template vite --base radix --preset b2D0wqNxT
+npx shadcn@latest init --template vite --base radix --preset b2D0wqNxT   # pick Radix UI, never Base UI (studio convention)
 ```
 
 ## Step 2 — Applying Luma to an existing app (orchestrator-approved only)
