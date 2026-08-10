@@ -36,6 +36,21 @@ bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --fe
 The wrapper re-execs from a snapshot (2.2.2+) so self-edits are safe, but prefer
 orchestrator-owned harness changes when possible.
 
+### Codex sandbox limits — route around them, do not fight them
+
+`codex exec -s workspace-write` **denies every write outside the workspace.** Four distinct hits
+in one mission (`20260807-ui-i18n-foundation`):
+
+| Blocked | Symptom | Fix |
+|---|---|---|
+| `.git` | task completes, then `git add` fails `Operation not permitted` | `--add-dir "$WORKSPACE/.git"` (now a default) |
+| `$HOME` CLI state — `~/.supabase`, `~/Library/Preferences/.wrangler` | `EPERM` **before** the command does any real work; not silenced by the tool's own telemetry flags | `--add-dir <path>` per task |
+| Binding a TCP port | dev server `listen EPERM`; `vitest-pool-workers` cannot start `workerd` | **unfixable — reassign the task** |
+
+**Never route to codex** any task whose verification needs a running app: a dev server,
+Playwright, or a Cloudflare Worker repo's `npm test`. Use `agent` or `agy` instead. A codex worker
+will correctly stop at the gate, and you will have spent a dispatch discovering a known limit.
+
 Each spawn writes `.tasks/logs/…` **and** `.tasks/receipts/worker-*.json`.
 Before flipping `passes: true` or asking for a human GATE:
 
@@ -98,6 +113,23 @@ Judge by exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
 - **INFRASTRUCTURE FAIL** (429 / auth / no edits) → does not consume attempt;
   reassign; if Grok infra-fails on agent premium, retry `--tier economy`
   (Composer) or next CLI.
+
+**Cursor capacity failures — retry before falling back.** Grok returns
+`ERROR_RESOURCE_EXHAUSTED` under load. That is **capacity, not quota** (check the account
+dashboard before assuming otherwise). **Retry up to 4 FRESH spawns** — never resume a failed one —
+then fall back: `cursor.premium → codex.premium`, `cursor.economy → codex.economy`, **except**
+app-verification tasks, which go to `agy.premium` (see the codex limits above).
+
+🔴 **The dangerous shape is `exit=0` with an EMPTY log, not `exit=1`.** A retry rule keyed on
+non-zero exit misses the failure that most needs retrying. Retry when:
+
+- `exit != 0`, **or**
+- `exit == 0` **and** `workspace_changed == false` **and** the log has no substantive output.
+
+**Never retry a genuine escalation.** A worker that stops with a substantive log and a reasoned
+PROGRESS entry made a correct decision; re-running it just re-hits the real blocker. The
+discriminator is **an empty log**, not **an unchanged workspace**.
+
 
 ### False-green checklist — `exit=0` is not proof of work
 

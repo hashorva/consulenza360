@@ -33,7 +33,7 @@ fi
 set -euo pipefail
 
 usage() {
-  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--effort <value>] [--feature ID] [--repo <path>]" >&2
+  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--effort <value>] [--feature ID] [--repo <path>] [--add-dir <path>]" >&2
   exit 2
 }
 
@@ -47,6 +47,17 @@ MODEL_OVERRIDE=""
 EFFORT="medium"
 FEATURE=""
 REPO_IN=""
+# Extra writable roots for the codex sandbox (repeatable). codex's
+# workspace-write policy denies ALL writes outside the workspace, which breaks
+# any CLI keeping state in $HOME. Hit twice already: .git (T-004, now default
+# below) and the Supabase CLI's ~/.supabase/telemetry.json (T-007), which fails
+# with EPERM before the command even contacts Supabase — and is NOT silenced by
+# SUPABASE_DISABLE_TELEMETRY. Pass --add-dir "$HOME/.supabase" for DB tasks.
+# Fourth instance (T-020): wrangler writes a dated debug log to
+# ~/Library/Preferences/.wrangler/logs/, so `npm test` in a Workers repo (vitest-pool-workers
+# spawns wrangler) dies with EPERM before a single test runs. Pass
+# --add-dir "$HOME/Library/Preferences/.wrangler" for Cloudflare Worker repos.
+ADD_DIRS=()
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +66,7 @@ while [ $# -gt 0 ]; do
     --effort) EFFORT="${2:?}"; shift 2 ;;
     --feature) FEATURE="${2:?}"; shift 2 ;;
     --repo) REPO_IN="${2:?}"; shift 2 ;;
+    --add-dir) ADD_DIRS+=("${2/#\~/$HOME}"); shift 2 ;;
     *) EXTRA_ARGS+=("$1"); shift ;;
   esac
 done
@@ -212,9 +224,19 @@ case "$WORKER" in
     # and a dispatch hangs forever when the caller keeps stdin open (pipes, FIFOs,
     # orchestrator wrappers). Always close it. The run-tests.sh stdin regression
     # holds a FIFO open on purpose — without this redirect that check fails.
-    codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
-      -c "model_reasoning_effort=\"$EFFORT\"" \
-      "$PROMPT" >>"$LOG" 2>&1 < /dev/null
+    # --add-dir "$WORKSPACE/.git": codex's workspace-write sandbox exposes .git
+    # READ-ONLY, so a worker completes its task and then fails at `git add` with
+    # "Operation not permitted" (first hit: T-004/F006, 2026-08-07 — work was
+    # correct, commit impossible). Without this the orchestrator must commit on
+    # the worker's behalf and every codex receipt reports commits_made=0.
+    # Harmless when the sandbox already permits it. Callers may append more
+    # writable roots with --add-dir (see ADD_DIRS above).
+    CODEX_ARGS=(exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" --add-dir "$WORKSPACE/.git")
+    for _d in ${ADD_DIRS+"${ADD_DIRS[@]}"}; do
+      CODEX_ARGS+=(--add-dir "$_d")
+    done
+    CODEX_ARGS+=(-c "model_reasoning_effort=\"$EFFORT\"")
+    codex "${CODEX_ARGS[@]}" "$PROMPT" >>"$LOG" 2>&1 < /dev/null
     EC=$?
     set -e
     ;;
