@@ -46,6 +46,7 @@ in one mission (`20260807-ui-i18n-foundation`):
 | `.git` | task completes, then `git add` fails `Operation not permitted` | `--add-dir "$WORKSPACE/.git"` (now a default) |
 | `$HOME` CLI state — `~/.supabase`, `~/Library/Preferences/.wrangler` | `EPERM` **before** the command does any real work; not silenced by the tool's own telemetry flags | `--add-dir <path>` per task |
 | Binding a TCP port | dev server `listen EPERM`; `vitest-pool-workers` cannot start `workerd` | **unfixable — reassign the task** |
+| Reading the macOS keychain | `supabase db push` fails `Access token not provided` **while `migration list` and linked-DB queries succeed** | **unfixable — reassign.** Applies to anything hitting a *management API*, not just a linked database |
 
 **Never route to codex** any task whose verification needs a running app: a dev server,
 Playwright, or a Cloudflare Worker repo's `npm test`. Use `agent` or `agy` instead. A codex worker
@@ -71,6 +72,33 @@ Before spawn: `MISSION=$(bash scripts/active-mission.sh)`; read Fleet; use
 unless the human names Fable.
 
 Delegate small safe work to Composer (economy) — do not burn Grok on boilerplate.
+
+### Reconcile the task body against the feature steps BEFORE dispatching
+
+A worker follows **the task body**. Your review and `verify-mission.sh` judge **the feature steps**.
+When those two disagree the worker does exactly what it was told, still fails the checklist, and you
+find out *after* the change has landed.
+
+Three occurrences in two missions, all the same shape — the body was narrower than the steps:
+
+| Body said | Step demanded | Result |
+|---|---|---|
+| "`funds` is the outlier" | "every table that currently grants them" | worker fixed 1 of 5 tables |
+| banner scoped five tables | "no `INSERT/UPDATE/DELETE/TRUNCATE` on **any** table" | `TRUNCATE` left on all eight |
+| "11 jurisdiction columns" | per-column verification | count was 10; step unsatisfiable as written |
+
+**Before every dispatch, read the task body and that feature's `features.json` entry side by side**
+and confirm all three:
+
+1. **Every acceptance step is achievable from the task body alone** — a worker never reads your
+   intent, only your words.
+2. **No step is broader than the scope the body describes.** If the body names a list, the step must
+   not say "all".
+3. **Any ground-truth table is stated as measured, not inferred.** If you generalised from a partial
+   query, say so — or re-measure. Cite the query.
+
+Cost of skipping: a wasted dispatch, and on a database task a second production migration to finish
+the first. Cost of doing it: about thirty seconds of reading.
 
 ## Step 0 — Preconditions
 
