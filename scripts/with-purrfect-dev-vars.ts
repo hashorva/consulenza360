@@ -50,7 +50,7 @@ if (command.length === 0) {
 }
 
 const sharedVarsPath = path.resolve(
-  process.env.CONSULENZA360_SHARED_DEV_VARS ?? "../purrfect-worker/.dev.vars",
+  process.env.CONSULENZA360_SHARED_DEV_VARS ?? ".dev.vars",
 );
 
 if (!existsSync(sharedVarsPath)) {
